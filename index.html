@@ -2471,18 +2471,21 @@ $("exportGif").onclick = async () => {
     const workerBlob=await fetch("https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js").then(r=>r.blob());
     const workerURL=URL.createObjectURL(workerBlob);
 
-    // postStage 전체 캡처 (배경 포함)
     postStage.classList.add("exporting");
     selSticker=null; renderStickers();
     const prevT=postStage.style.transform;
     postStage.style.transform="none";
     await new Promise(r=>requestAnimationFrame(r));
 
-    const S=1.5;
+    // 트위터 GIF 최적화: 짧은변 480px 이하로 축소 (용량 핵심)
+    const stageW=postStage.offsetWidth, stageH=postStage.offsetHeight;
+    const shortSide=Math.min(stageW,stageH);
+    const S=Math.min(1.0, 480/shortSide); // 최대 1.0 (원본보다 크게 안 함)
+
     const base=await html2canvas(postStage,{scale:S,useCORS:true,backgroundColor:null,logging:false});
     const W=base.width, H=base.height;
 
-    // 카드(post)의 postStage 기준 오프셋 계산
+    // 카드 오프셋
     const stageRect=postStage.getBoundingClientRect();
     const postRect=post.getBoundingClientRect();
     const cardX=(postRect.left-stageRect.left)*S;
@@ -2490,7 +2493,12 @@ $("exportGif").onclick = async () => {
     const cardW=postRect.width *S;
     const cardH=postRect.height*S;
 
-    const gif=new GIF({workers:2,quality:3,width:W,height:H,workerScript:workerURL});
+    // 색상 수를 128로 제한 (256→128 만으로 용량 절반)
+    const gif=new GIF({
+      workers:2, quality:7, colors:128,
+      width:W, height:H, workerScript:workerURL
+    });
+
     const oc=document.createElement("canvas");
     oc.width=W; oc.height=H;
     const ctx=oc.getContext("2d");
@@ -2499,8 +2507,10 @@ $("exportGif").onclick = async () => {
       const col=c.color||state.colorBubble;
       const bs=state.bubbleStyle||{};
       const shape=bs.shape||"round";
-      const FS=14*S, PAD=10*S, BW=2*S;
-      const R=shape==="pill"||shape==="thought"?999:13*S;
+      const FS=Math.max(11,Math.round(13*S));
+      const PAD=Math.max(7,Math.round(9*S));
+      const BW=Math.max(1.5,2*S);
+      const R=shape==="pill"||shape==="thought"?999:Math.round(11*S);
 
       ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
       const whoW=ctx.measureText(c.who+" ").width;
@@ -2508,52 +2518,41 @@ $("exportGif").onclick = async () => {
       const msgW=ctx.measureText(c.text).width;
       const bW=whoW+msgW+PAD*2;
       const bH=FS+PAD*2;
-      const tailH=8*S;
-      const mg=8*S;
+      const tailH=Math.round(7*S);
+      const mg=Math.round(6*S);
 
-      // 카드 기준 % → 절대 px (캔버스 기준)
       let bx=cardX+(cardW*(xPct/100));
       let by=cardY+(cardH*(1-yPct/100))-bH-tailH;
-
-      // 카드 경계 안으로 클램핑
       bx=Math.max(cardX+mg, Math.min(bx, cardX+cardW-bW-mg));
       by=Math.max(cardY+mg, Math.min(by, cardY+cardH-bH-tailH-mg));
 
-      // 박스
-      ctx.fillStyle="#ffffff";
-      ctx.strokeStyle=col;
-      ctx.lineWidth=BW;
-      ctx.beginPath();
-      ctx.roundRect(bx,by,bW,bH,Math.min(R,bH/2));
+      ctx.fillStyle="#ffffff";ctx.strokeStyle=col;ctx.lineWidth=BW;
+      ctx.beginPath();ctx.roundRect(bx,by,bW,bH,Math.min(R,bH/2));
       ctx.fill();ctx.stroke();
 
-      // 꼬리
-      const tx=bx+16*S;
+      const tx=bx+Math.round(14*S);
       ctx.fillStyle=col;
-      ctx.beginPath();
-      ctx.moveTo(tx,by+bH);ctx.lineTo(tx+5*S,by+bH+tailH);ctx.lineTo(tx+13*S,by+bH);
+      ctx.beginPath();ctx.moveTo(tx,by+bH);ctx.lineTo(tx+Math.round(4*S),by+bH+tailH);ctx.lineTo(tx+Math.round(11*S),by+bH);
       ctx.closePath();ctx.fill();
       ctx.fillStyle="#ffffff";
-      ctx.beginPath();
-      ctx.moveTo(tx+BW,by+bH-1);ctx.lineTo(tx+5*S,by+bH+tailH-3*S);ctx.lineTo(tx+12*S,by+bH-1);
+      ctx.beginPath();ctx.moveTo(tx+BW,by+bH-1);ctx.lineTo(tx+Math.round(4*S),by+bH+tailH-Math.round(2.5*S));ctx.lineTo(tx+Math.round(10*S),by+bH-1);
       ctx.closePath();ctx.fill();
 
-      // 텍스트
       ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
-      ctx.fillStyle=col;
-      ctx.fillText(c.who+" ",bx+PAD,by+PAD+FS*0.82);
+      ctx.fillStyle=col;ctx.fillText(c.who+" ",bx+PAD,by+PAD+FS*0.82);
       ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
-      ctx.fillStyle="#3a3a3a";
-      ctx.fillText(c.text,bx+PAD+whoW,by+PAD+FS*0.82);
+      ctx.fillStyle="#3a3a3a";ctx.fillText(c.text,bx+PAD+whoW,by+PAD+FS*0.82);
     }
 
     const comments=state.comments.length?state.comments
       :[{who:"@friend",text:"💕",color:state.colorBubble}];
     const POS=[[6,54],[6,38],[6,68],[42,54],[42,38],[42,68]];
-    const SHOW=9, DELAY=110;
-    const GAP=Math.ceil(SHOW*0.6);
+
+    // 프레임 수 최소화: SHOW 줄이고 DELAY 늘림 (같은 시간, 더 적은 프레임)
+    const SHOW=6, DELAY=160;
+    const GAP=Math.ceil(SHOW*0.55);
     const startAt=comments.map((_,i)=>i*GAP);
-    const TOTAL=startAt[comments.length-1]+SHOW+3;
+    const TOTAL=startAt[comments.length-1]+SHOW+2;
 
     for(let frame=0;frame<TOTAL;frame++){
       ctx.clearRect(0,0,W,H);
@@ -2561,8 +2560,7 @@ $("exportGif").onclick = async () => {
       for(let ci=0;ci<comments.length;ci++){
         const f=frame-startAt[ci];
         if(f>=0&&f<SHOW){
-          const pos=POS[ci%POS.length];
-          drawBubble(comments[ci],pos[0],pos[1]);
+          drawBubble(comments[ci],POS[ci%POS.length][0],POS[ci%POS.length][1]);
         }
       }
       gif.addFrame(ctx,{delay:DELAY,copy:true});
@@ -2572,7 +2570,7 @@ $("exportGif").onclick = async () => {
 
     ctx.clearRect(0,0,W,H);
     ctx.drawImage(base,0,0);
-    gif.addFrame(ctx,{delay:800,copy:true});
+    gif.addFrame(ctx,{delay:900,copy:true});
 
     postStage.style.transform=prevT;
     postStage.classList.remove("exporting");
@@ -2580,9 +2578,10 @@ $("exportGif").onclick = async () => {
 
     setStatus("GIF 인코딩 중…");
     gif.on("finished",blob=>{
-      const mb=(blob.size/1024/1024).toFixed(1);
+      const mb=(blob.size/1024/1024).toFixed(2);
+      const ok=+mb<=5;
       downloadURL(URL.createObjectURL(blob),"huchu.gif");
-      setStatus(`GIF 저장 완료! (${mb}MB${+mb>5?" — 5MB 초과":"  ✅ 트위터 업로드 가능"})`);
+      setStatus(`GIF 완료! ${mb}MB ${ok?"✅ 트위터 업로드 가능":"⚠️ 5MB 초과 — 댓글을 2~3개로 줄여보세요"}`);
       btns.forEach(b=>b.disabled=false);
     });
     gif.render();
