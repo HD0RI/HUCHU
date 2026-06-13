@@ -240,12 +240,13 @@
     padding:7px 11px;
     font-size:13px;
     line-height:1.4;
-    white-space:nowrap;
-    max-width:180px;
+    white-space:normal;
+    word-break:keep-all;
+    max-width:160px;
+    width:max-content;
     overflow:visible;
-    text-overflow:ellipsis;
     box-shadow:0 3px 10px rgba(0,0,0,.15);
-    margin-bottom:8px; /* 꼬리 공간 */
+    margin-bottom:8px;
   }
   .bm-bubble-body .bm-tail{
     position:absolute;
@@ -795,7 +796,8 @@
     </div>
     <div class="bm-footer">
       <button class="btn" id="bmCancel">취소</button>
-      <button class="btn primary" id="bmSave">이 상태로 저장</button>
+      <button class="btn" id="bmSaveVideo">🎬 영상으로 저장</button>
+      <button class="btn primary" id="bmSave">🖼️ 이미지로 저장</button>
     </div>
   </div>
 </div>
@@ -822,7 +824,7 @@
       <button class="modal-btn" id="exportVideo">
         <span class="modal-icon">🎬</span>
         <b>영상 (WebM)</b>
-        <small>고화질 · 작은 용량</small>
+        <small>말풍선 배치 후 저장</small>
       </button>
     </div>
     <button class="modal-close" id="closeExportModal">닫기</button>
@@ -2150,10 +2152,10 @@ $("bmCancel").onclick = () => { closeBubbleModal(); $("bmPreview")._captured=fal
 // 저장 실행
 $("bmSave").onclick = async () => {
   setStatus("이미지 생성 중…");
-  // 말풍선을 실제 스테이지에 임시로 붙임
+  // 말풍선을 스테이지에 임시로 붙임 (post 아닌 postStage — overflow:hidden 밖)
   const temps = bmBubbles.map(b => {
     const el = makeBmBubbleEl(b);
-    post.appendChild(el);
+    postStage.appendChild(el);
     return el;
   });
   try{
@@ -2169,21 +2171,38 @@ $("bmSave").onclick = async () => {
   }
 };
 
-// 실제 저장용 말풍선 요소 (html2canvas 호환 인라인 스타일)
+// 실제 저장용 말풍선 요소 — postStage 기준 % 위치, 줄바꿈 허용
 function makeBmBubbleEl(b){
-  const stageW = postStage.offsetWidth, stageH = postStage.offsetHeight;
-  const postRect = post.getBoundingClientRect();
-  const stageRect = postStage.getBoundingClientRect();
-  // xp/yp는 스테이지 기준 % → post 기준 px로 변환
-  const ax = (b.xp/100)*stageW - (postRect.left - stageRect.left);
-  const ay = (b.yp/100)*stageH - (postRect.top  - stageRect.top);
   const col = b.color||state.colorBubble;
   const s = b.scale||1;
+  const maxW = Math.round(200 * s);
   const el = document.createElement("div");
-  el.style.cssText = `position:absolute;background:#fff;border:2.5px solid ${col};border-radius:14px;padding:9px 13px;color:#3a3a3a;font-size:${Math.round(14*s)}px;line-height:1.5;font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:20;left:${ax}px;top:${ay}px;transform:translate(-50%,-100%);white-space:nowrap;pointer-events:none;`;
+  // xp/yp는 스테이지 % 그대로 사용
+  el.style.cssText = `
+    position:absolute;
+    background:#fff;
+    border:2.5px solid ${col};
+    border-radius:14px;
+    padding:9px 13px;
+    color:#3a3a3a;
+    font-size:${Math.round(14*s)}px;
+    line-height:1.5;
+    font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+    box-shadow:0 4px 14px rgba(0,0,0,.18);
+    z-index:20;
+    left:${b.xp}%;
+    top:${b.yp}%;
+    transform:translate(-50%,-100%);
+    max-width:${maxW}px;
+    width:max-content;
+    white-space:normal;
+    word-break:keep-all;
+    pointer-events:none;
+  `;
   const w=document.createElement("span"); w.style.cssText=`font-weight:800;margin-right:5px;color:${col};`; w.textContent=b.who;
   const m=document.createElement("span"); m.textContent=b.text;
   el.append(w,m);
+  // 꼬리 SVG
   const sv=document.createElementNS("http://www.w3.org/2000/svg","svg");
   sv.setAttribute("width","16");sv.setAttribute("height","10");sv.setAttribute("viewBox","0 0 16 10");
   sv.style.cssText="position:absolute;bottom:-10px;left:16px;overflow:visible;";
@@ -2192,6 +2211,72 @@ function makeBmBubbleEl(b){
   sv.append(o,i); el.appendChild(sv);
   return el;
 }
+
+// 영상 저장 — 말풍선 배치 그대로 캡처해서 WebM으로
+$("bmSaveVideo").onclick = async () => {
+  if(!window.MediaRecorder){ setStatus("Chrome 권장 — 이 브라우저는 영상 저장 미지원"); return; }
+  setStatus("영상 생성 중…");
+  $("bmSave").disabled = true; $("bmSaveVideo").disabled = true;
+
+  // 말풍선을 스테이지에 임시 붙임
+  const temps = bmBubbles.map(b => { const el=makeBmBubbleEl(b); postStage.appendChild(el); return el; });
+
+  try{
+    postStage.classList.add("exporting");
+    selSticker = null; renderStickers();
+    const prevTransform = postStage.style.transform;
+    postStage.style.transform = "none";
+    await new Promise(r=>requestAnimationFrame(r));
+
+    // 현재 화면을 2배 해상도로 캡처
+    const snap = await html2canvas(postStage, {scale:2, useCORS:true, backgroundColor:null, logging:false});
+
+    // 캔버스에 고정 이미지로 그려서 스트림 녹화
+    const W = snap.width, H = snap.height;
+    const oc = document.createElement("canvas");
+    oc.width = W; oc.height = H;
+    const octx = oc.getContext("2d");
+    octx.drawImage(snap, 0, 0);
+
+    const mime = ["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm"]
+      .find(m=>MediaRecorder.isTypeSupported(m)) || "video/webm";
+    const stream = oc.captureStream(30);
+    const rec = new MediaRecorder(stream, {mimeType:mime, videoBitsPerSecond:10_000_000});
+    const chunks = [];
+    rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+    rec.start(100);
+
+    const DURATION = 3000; // 3초 유지
+    setStatus("영상 녹화 중… (3초)");
+
+    // 3초 동안 같은 프레임을 계속 그림 (매끄럽게)
+    const endTime = Date.now() + DURATION;
+    while(Date.now() < endTime){
+      octx.clearRect(0,0,W,H);
+      octx.drawImage(snap,0,0);
+      await new Promise(r=>requestAnimationFrame(r));
+    }
+
+    rec.stop();
+    await new Promise(r=>{rec.onstop=r;});
+    const blob = new Blob(chunks, {type:mime});
+    downloadURL(URL.createObjectURL(blob), "huchu.webm");
+
+    temps.forEach(t=>t.remove());
+    postStage.style.transform = prevTransform;
+    postStage.classList.remove("exporting");
+    selSticker = prevSel; renderStickers();
+    closeBubbleModal();
+    $("bmPreview")._captured = false;
+    setStatus("영상 저장 완료!");
+  }catch(err){
+    temps.forEach(t=>t.remove());
+    postStage.classList.remove("exporting");
+    selSticker = prevSel; renderStickers();
+    setStatus("오류: "+err.message);
+  }
+  $("bmSave").disabled = false; $("bmSaveVideo").disabled = false;
+};
 
 // PNG 버튼 → 모달 열기
 $("exportPng").onclick = () => { closeModal(); $("bmPreview")._captured=false; openBubbleModal(false); };
@@ -2213,161 +2298,13 @@ $("copyBtn").onclick = async () => {
 };
 
 /* ===== 영상(WebM) 내보내기 ===== */
-$("exportVideo").onclick = async () => {
+// 영상도 말풍선 배치 모달을 거쳐서 저장
+$("exportVideo").onclick = () => {
   closeModal();
   if(!window.MediaRecorder){ setStatus("이 브라우저는 영상 저장을 지원하지 않아요 (Chrome 권장)."); return; }
-  const btns = [$("exportVideo")];
-  btns.forEach(b => b.disabled = true);
-  setStatus("영상 준비 중…");
-  const prevSel = selSticker;
-
-  try{
-    // 1. 스테이지를 줌 100%로 고정, 선택 해제
-    postStage.classList.add("exporting");
-    selSticker = null; renderStickers();
-    const prevTransform = postStage.style.transform;
-    postStage.style.transform = "none";
-    await new Promise(r => requestAnimationFrame(r)); // 레이아웃 확정
-
-    // 2. 스테이지 요소를 직접 captureStream
-    const SW = postStage.offsetWidth, SH = postStage.offsetHeight;
-    let stream;
-    if(postStage.captureStream){
-      // 일부 브라우저에서 HTMLElement captureStream 지원
-      stream = postStage.captureStream(60);
-    }else{
-      // 대안: offscreen canvas에 스테이지를 복사해서 스트림
-      const oc = document.createElement("canvas");
-      oc.width = SW * 2; oc.height = SH * 2;
-      const octx = oc.getContext("2d");
-      let recording = true;
-      // RAF 루프로 스테이지를 2배로 계속 복사
-      (async function paint(){
-        while(recording){
-          const snap = await html2canvas(postStage,{scale:2,useCORS:true,backgroundColor:null,logging:false});
-          octx.clearRect(0,0,oc.width,oc.height);
-          octx.drawImage(snap,0,0,oc.width,oc.height);
-          await new Promise(r=>setTimeout(r,33)); // ~30fps
-        }
-      })();
-      stream = oc.captureStream(30);
-      stream._stopPaint = () => { recording = false; };
-    }
-
-    const mime = ["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm"]
-      .find(m => MediaRecorder.isTypeSupported(m)) || "video/webm";
-    const rec = new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond:12_000_000 });
-    const chunks = [];
-    rec.ondataavailable = e => e.data.size && chunks.push(e.data);
-    rec.start(50);
-
-    // 3. 말풍선 애니메이션을 실제 CSS로 DOM에 붙임
-    const comments = state.comments.length ? state.comments
-      : [{who:"@friend_01", text:"이 사진 너무 좋다 🩷", color:state.colorBubble}];
-    const POSITIONS = [[6,52],[6,34],[38,52],[38,34],[6,68],[38,68]];
-
-    // 각 댓글의 말풍선을 CSS transition으로 자연스럽게
-    const IN_MS   = 500;
-    const HOLD_MS = 1400;
-    const OUT_MS  = 400;
-    const GAP_MS  = 700; // 댓글 사이 간격
-
-    function makeLiveBubble(comment, posLeft, posBottom){
-      const bs = state.bubbleStyle||{};
-      const shape = bs.shape||"round";
-      const col = comment.color||state.colorBubble;
-      const radius = (shape==="pill"||shape==="thought")?"999px":"14px";
-      const pad    = (shape==="pill"||shape==="thought")?"9px 18px":"10px 14px";
-      const b = document.createElement("div");
-      b.style.cssText = `
-        position:absolute;
-        max-width:64%;
-        background:#fff;
-        border:2.5px solid ${col};
-        border-radius:${radius};
-        padding:${pad};
-        color:#3a3a3a;
-        font-size:14px;
-        line-height:1.5;
-        font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
-        box-shadow:0 4px 16px rgba(0,0,0,.18);
-        left:${posLeft}%;
-        bottom:${posBottom}%;
-        z-index:20;
-        pointer-events:none;
-        opacity:0;
-        transform:translateY(12px) scale(0.9);
-        transition:opacity ${IN_MS}ms cubic-bezier(.22,.68,0,1.2),
-                   transform ${IN_MS}ms cubic-bezier(.22,.68,0,1.2);
-        will-change:opacity,transform;
-      `;
-      const w = document.createElement("span");
-      w.style.cssText = `font-weight:800;margin-right:5px;color:${col};`;
-      w.textContent = comment.who;
-      const m = document.createElement("span");
-      m.textContent = comment.text;
-      b.append(w,m);
-      if(shape!=="thought"&&shape!=="none"){
-        const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");
-        svg.setAttribute("width","18");svg.setAttribute("height","12");
-        svg.setAttribute("viewBox","0 0 18 12");
-        svg.style.cssText="position:absolute;bottom:-12px;left:18px;overflow:visible;";
-        const o=document.createElementNS("http://www.w3.org/2000/svg","polygon");
-        o.setAttribute("points","0,0 18,0 5,12");o.setAttribute("fill",col);
-        const i=document.createElementNS("http://www.w3.org/2000/svg","polygon");
-        i.setAttribute("points","2.5,0 18,0 6.5,9.5");i.setAttribute("fill","#fff");
-        svg.append(o,i);b.appendChild(svg);
-      }
-      post.appendChild(b);
-      return b;
-    }
-
-    function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
-
-    // 4. 각 댓글을 GAP_MS 간격으로 순서대로 등장시킴
-    //    마지막 댓글이 사라질 때까지 기다림
-    const bubblePromises = comments.map((c, ci) => async () => {
-      await sleep(ci * GAP_MS);
-      const pos = POSITIONS[ci % POSITIONS.length];
-      const b = makeLiveBubble(c, pos[0], pos[1]);
-      // 등장
-      await sleep(30); // 브라우저 layout 확정
-      b.style.opacity = "1";
-      b.style.transform = "translateY(0) scale(1)";
-      await sleep(IN_MS + HOLD_MS);
-      // 퇴장
-      b.style.transition = `opacity ${OUT_MS}ms ease, transform ${OUT_MS}ms ease`;
-      b.style.opacity = "0";
-      b.style.transform = "translateY(-10px) scale(0.92)";
-      await sleep(OUT_MS);
-      b.remove();
-    });
-
-    setStatus("영상 녹화 중…");
-    // 모든 댓글 애니메이션 병렬 실행
-    await Promise.all(bubblePromises.map(fn => fn()));
-    await sleep(600); // 끝 여유
-
-    // 5. 녹화 종료
-    if(stream._stopPaint) stream._stopPaint();
-    rec.stop();
-    await new Promise(r=>{ rec.onstop=r; });
-    const blob = new Blob(chunks, {type:mime});
-    downloadURL(URL.createObjectURL(blob), "huchu.webm");
-
-    postStage.style.transform = prevTransform;
-    postStage.classList.remove("exporting");
-    selSticker = prevSel; renderStickers();
-    setStatus("영상 저장 완료!");
-    btns.forEach(b=>b.disabled=false);
-
-  }catch(err){
-    postStage.classList.remove("exporting");
-    selSticker = prevSel; renderStickers();
-    setStatus("오류: "+err.message);
-    console.error(err);
-    btns.forEach(b=>b.disabled=false);
-  }
+  $("bmPreview")._captured = false;
+  openBubbleModal(false);
+  // 모달이 열리면서 영상 저장 버튼이 활성화됨
 };
 
 /* 초기화 */
