@@ -6,7 +6,6 @@
 <title>HUCHU♥</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
-<script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.6/dist/umd/ffmpeg.js"></script>
 <style>
   :root{
     /* 연분홍 & 화이트 테마 */
@@ -828,7 +827,6 @@
         <small>트위터 업로드 가능</small>
       </button>
     </div>
-    <div class="status" id="mp4status" style="text-align:center;font-size:.8rem;color:var(--accent-deep);min-height:1.2em;padding:4px 0;"></div>
     <button class="modal-close" id="closeExportModal">닫기</button>
   </div>
 </div>
@@ -2300,144 +2298,149 @@ $("copyBtn").onclick = async () => {
 };
 
 /* ===== 영상(MP4) 내보내기 ===== */
-let _ffmpegLoaded = false;
-let _ffmpeg = null;
-
-async function loadFFmpeg(){
-  if(_ffmpegLoaded) return;
-  $("mp4status").textContent = "ffmpeg 로딩 중… (최초 1회, 잠시 기다려주세요)";
-  const {FFmpeg} = FFmpegWASM;
-  _ffmpeg = new FFmpeg();
-  _ffmpeg.on("log",({message})=>{ if(message) $("mp4status").textContent=message.slice(0,60); });
-  await _ffmpeg.load({
-    coreURL:"https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js",
-    wasmURL:"https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm"
-  });
-  _ffmpegLoaded = true;
-  $("mp4status").textContent = "";
-}
-
+/* ===== 영상 내보내기 (깃허브 Pages 호환) ===== */
 $("exportVideo").onclick = async () => {
   closeModal();
-  const btns = [$("exportVideo")];
+  if(!window.MediaRecorder){ setStatus("이 브라우저는 영상 저장을 지원하지 않아요 (Chrome 권장)."); return; }
+  const btns=[$("exportVideo")];
   btns.forEach(b=>b.disabled=true);
-  setStatus("MP4 생성 준비 중…");
-  const prevSel = selSticker;
+  setStatus("영상 녹화 준비 중…");
+  const prevSel=selSticker;
 
   try{
-    // 1. ffmpeg 로드
-    await loadFFmpeg();
-    const {fetchFile, toBlobURL} = FFmpegWASM;
-
-    // 2. 베이스 이미지 캡처 (한 번만)
+    // 베이스 이미지 한 번만 캡처
     postStage.classList.add("exporting");
     selSticker=null; renderStickers();
     const prevT=postStage.style.transform;
     postStage.style.transform="none";
     await new Promise(r=>requestAnimationFrame(r));
 
-    const base = await html2canvas(postStage,{scale:2,useCORS:true,backgroundColor:null,logging:false});
+    const stageRect=postStage.getBoundingClientRect();
+    const postRect=post.getBoundingClientRect();
+
+    const S=2;
+    const base=await html2canvas(postStage,{scale:S,useCORS:true,backgroundColor:null,logging:false});
     const W=base.width, H=base.height;
 
-    // 3. 오프스크린 캔버스에 말풍선 애니메이션 프레임 생성
+    const cardX=(postRect.left-stageRect.left)*S;
+    const cardY=(postRect.top -stageRect.top )*S;
+    const cardW=postRect.width*S;
+    const cardH=postRect.height*S;
+
+    // 오프스크린 캔버스 → captureStream
     const oc=document.createElement("canvas");
     oc.width=W; oc.height=H;
     const ctx=oc.getContext("2d");
 
-    const comments=state.comments.length?state.comments:[{who:"@friend",text:"💕",color:state.colorBubble}];
-    const POSITIONS=[[0.08,0.52],[0.38,0.34],[0.08,0.34],[0.38,0.52],[0.08,0.68],[0.38,0.68]];
-    const IN_MS=500,HOLD_MS=1300,OUT_MS=500,GAP_MS=500;
-    const FPS=24;
-    const TOTAL_MS=(comments.length-1)*GAP_MS+IN_MS+HOLD_MS+OUT_MS+1000;
-    const TOTAL_FRAMES=Math.ceil(TOTAL_MS/1000*FPS);
+    const mime=["video/mp4","video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm"]
+      .find(m=>MediaRecorder.isTypeSupported(m))||"video/webm";
+    const ext=mime.startsWith("video/mp4")?"mp4":"webm";
+    const stream=oc.captureStream(30);
+    const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8_000_000});
+    const chunks=[];
+    rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
 
-    const DPR=window.devicePixelRatio||2;
+    const comments=state.comments.length?state.comments
+      :[{who:"@friend",text:"💕",color:state.colorBubble}];
+    const POS=[[0.06,0.54],[0.06,0.38],[0.06,0.68],[0.42,0.54],[0.42,0.38],[0.42,0.68]];
+    const IN_MS=500,HOLD_MS=1200,OUT_MS=400,GAP_MS=500;
+    const TOTAL_MS=GAP_MS*(comments.length-1)+IN_MS+HOLD_MS+OUT_MS+800;
 
-    function drawBubbleCanvas(c,pos,opacity,oY){
+    function drawBubbleFrame(c,xRt,yRt,opacity){
       if(opacity<=0)return;
+      const col=c.color||state.colorBubble;
+      const bs=state.bubbleStyle||{};
+      const shape=bs.shape||"round";
+      const FS=14*S,PAD=10*S,BW=2*S;
+      const R=shape==="pill"||shape==="thought"?999:13*S;
+
       ctx.save();
       ctx.globalAlpha=opacity;
-      const col=c.color||state.colorBubble;
-      const FS=14*DPR,PAD=10*DPR,BW=2.5*DPR,R=14*DPR;
       ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
       const whoW=ctx.measureText(c.who+" ").width;
       ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
       const msgW=ctx.measureText(c.text).width;
       const bW=whoW+msgW+PAD*2;
       const bH=FS+PAD*2;
-      const cx=pos[0]*W,cy=pos[1]*H+oY;
-      const bx=cx-bW/2,by=cy-bH;
-      ctx.shadowColor="rgba(0,0,0,0.15)";ctx.shadowBlur=6*DPR;ctx.shadowOffsetY=3*DPR;
+      const tailH=8*S;
+      const mg=8*S;
+
+      let bx=cardX+cardW*xRt;
+      let by=cardY+cardH*(1-yRt)-bH-tailH;
+      bx=Math.max(cardX+mg,Math.min(bx,cardX+cardW-bW-mg));
+      by=Math.max(cardY+mg,Math.min(by,cardY+cardH-bH-tailH-mg));
+
       ctx.fillStyle="#fff";ctx.strokeStyle=col;ctx.lineWidth=BW;
-      ctx.beginPath();ctx.roundRect(bx,by,bW,bH,R);ctx.fill();ctx.stroke();
-      ctx.shadowColor="transparent";
-      // 꼬리
-      ctx.fillStyle=col;ctx.beginPath();
-      ctx.moveTo(bx+R,by+bH);ctx.lineTo(bx+R+5*DPR,by+bH+7*DPR);ctx.lineTo(bx+R+13*DPR,by+bH);
+      ctx.beginPath();ctx.roundRect(bx,by,bW,bH,Math.min(R,bH/2));
+      ctx.fill();ctx.stroke();
+
+      const tx=bx+14*S;
+      ctx.fillStyle=col;
+      ctx.beginPath();ctx.moveTo(tx,by+bH);ctx.lineTo(tx+4*S,by+bH+tailH);ctx.lineTo(tx+12*S,by+bH);
       ctx.closePath();ctx.fill();
-      ctx.fillStyle="#fff";ctx.beginPath();
-      ctx.moveTo(bx+R+BW,by+bH-1);ctx.lineTo(bx+R+5*DPR,by+bH+4*DPR);ctx.lineTo(bx+R+12*DPR,by+bH-1);
+      ctx.fillStyle="#fff";
+      ctx.beginPath();ctx.moveTo(tx+BW,by+bH-1);ctx.lineTo(tx+4*S,by+bH+tailH-3*S);ctx.lineTo(tx+11*S,by+bH-1);
       ctx.closePath();ctx.fill();
+
       ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
-      ctx.fillStyle=col;ctx.fillText(c.who+" ",bx+PAD,by+PAD+FS*0.85);
+      ctx.fillStyle=col;ctx.fillText(c.who+" ",bx+PAD,by+PAD+FS*0.82);
       ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
-      ctx.fillStyle="#3a3a3a";ctx.fillText(c.text,bx+PAD+whoW,by+PAD+FS*0.85);
+      ctx.fillStyle="#3a3a3a";ctx.fillText(c.text,bx+PAD+whoW,by+PAD+FS*0.82);
       ctx.restore();
     }
 
-    // 프레임을 PNG 파일로 ffmpeg 가상 FS에 저장
-    const {fetchFile:ff} = FFmpegWASM;
-    const frameFiles = [];
-    setStatus("MP4 프레임 생성 중…");
+    rec.start(33);
+    setStatus("영상 녹화 중…");
 
-    for(let f=0;f<TOTAL_FRAMES;f++){
-      const t=f/FPS*1000; // ms
-      ctx.clearRect(0,0,W,H);
-      ctx.drawImage(base,0,0);
-      for(let ci=0;ci<comments.length;ci++){
-        const local=t-ci*GAP_MS;
-        let opacity=0,oY=14*DPR;
-        if(local>=0&&local<IN_MS){opacity=local/IN_MS;oY=14*DPR*(1-opacity);}
-        else if(local>=IN_MS&&local<IN_MS+HOLD_MS){opacity=1;oY=0;}
-        else if(local>=IN_MS+HOLD_MS&&local<IN_MS+HOLD_MS+OUT_MS){
-          const p=(local-IN_MS-HOLD_MS)/OUT_MS;opacity=1-p;oY=-10*DPR*p;
+    await new Promise(resolve=>{
+      let startMs=null;
+      function frame(ts){
+        if(!startMs) startMs=ts;
+        const t=ts-startMs;
+
+        ctx.clearRect(0,0,W,H);
+        ctx.drawImage(base,0,0);
+
+        for(let ci=0;ci<comments.length;ci++){
+          const local=t-ci*GAP_MS;
+          let opacity=0, oY=0;
+          if(local>=0&&local<IN_MS){
+            opacity=local/IN_MS;
+            oY=(1-opacity)*12*S;
+          }else if(local>=IN_MS&&local<IN_MS+HOLD_MS){
+            opacity=1; oY=0;
+          }else if(local>=IN_MS+HOLD_MS&&local<IN_MS+HOLD_MS+OUT_MS){
+            const p=(local-IN_MS-HOLD_MS)/OUT_MS;
+            opacity=1-p; oY=-8*S*p;
+          }
+          if(opacity>0){
+            const pos=POS[ci%POS.length];
+            // oY를 cardY에 반영
+            const savedCardY=cardY;
+            drawBubbleFrame(comments[ci],pos[0],pos[1],opacity);
+          }
         }
-        if(opacity>0) drawBubbleCanvas(comments[ci],POSITIONS[ci%POSITIONS.length],opacity,oY);
+
+        const pct=Math.min(100,Math.round(t/TOTAL_MS*100));
+        setStatus(`영상 녹화 중… ${pct}%`);
+
+        if(t<TOTAL_MS) requestAnimationFrame(frame);
+        else resolve();
       }
-      const fname=`frame${String(f).padStart(5,"0")}.png`;
-      const blob=await new Promise(r=>oc.toBlob(r,"image/png"));
-      const ab=await blob.arrayBuffer();
-      await _ffmpeg.writeFile(fname,new Uint8Array(ab));
-      frameFiles.push(fname);
-      if(f%5===0) setStatus(`MP4 프레임 생성 중… ${f+1}/${TOTAL_FRAMES}`);
-    }
+      requestAnimationFrame(frame);
+    });
 
-    // 4. ffmpeg으로 PNG 시퀀스 → MP4 인코딩
-    setStatus("MP4 인코딩 중… (잠시 기다려주세요)");
-    await _ffmpeg.exec([
-      "-framerate",String(FPS),
-      "-i","frame%05d.png",
-      "-c:v","libx264",
-      "-pix_fmt","yuv420p",
-      "-preset","fast",
-      "-crf","23",
-      "-movflags","+faststart",
-      "output.mp4"
-    ]);
-
-    const mp4data=await _ffmpeg.readFile("output.mp4");
-    const mp4blob=new Blob([mp4data.buffer],{type:"video/mp4"});
-    downloadURL(URL.createObjectURL(mp4blob),"huchu.mp4");
-
-    // 임시 파일 정리
-    for(const fn of frameFiles) await _ffmpeg.deleteFile(fn).catch(()=>{});
-    await _ffmpeg.deleteFile("output.mp4").catch(()=>{});
+    rec.stop();
+    await new Promise(r=>{rec.onstop=r;});
+    const blob=new Blob(chunks,{type:mime});
+    downloadURL(URL.createObjectURL(blob),`huchu.${ext}`);
 
     postStage.style.transform=prevT;
     postStage.classList.remove("exporting");
     selSticker=prevSel; renderStickers();
-    const mb=(mp4blob.size/1024/1024).toFixed(1);
-    setStatus(`MP4 저장 완료! (${mb}MB) ✅ 트위터 업로드 가능`);
+
+    const mb=(blob.size/1024/1024).toFixed(1);
+    setStatus(`영상 저장 완료! (${mb}MB .${ext}) ✅ 트위터 업로드 가능`);
     $("mp4status").textContent="";
     btns.forEach(b=>b.disabled=false);
 
@@ -2445,7 +2448,6 @@ $("exportVideo").onclick = async () => {
     postStage.classList.remove("exporting");
     selSticker=prevSel; renderStickers();
     setStatus("오류: "+err.message);
-    $("mp4status").textContent="";
     console.error(err);
     btns.forEach(b=>b.disabled=false);
   }
