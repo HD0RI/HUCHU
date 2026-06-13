@@ -1907,19 +1907,19 @@ $("exportVideo").onclick = async () => {
 
     // 캔버스 스트림 준비
     const capCanvas = document.createElement("canvas");
-    const W = postStage.offsetWidth, H = postStage.offsetHeight;
+    const W = postStage.offsetWidth * 2, H = postStage.offsetHeight * 2;
     capCanvas.width = W; capCanvas.height = H;
     const ctx = capCanvas.getContext("2d");
-    const stream = capCanvas.captureStream(25); // 25fps
+    const stream = capCanvas.captureStream(30); // 30fps
     const mime = ["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm"].find(m=>MediaRecorder.isTypeSupported(m)) || "video/webm";
-    const rec = new MediaRecorder(stream, {mimeType:mime, videoBitsPerSecond:2_500_000});
+    const rec = new MediaRecorder(stream, {mimeType:mime, videoBitsPerSecond:8_000_000});
     const chunks = [];
     rec.ondataavailable = e => e.data.size && chunks.push(e.data);
 
     const comments = state.comments.length ? state.comments
       : [{who:"@friend_01", text:"이 사진 너무 좋다 🩷", color:state.colorBubble}];
 
-    const IN=6, HOLD=10, OUT=5, FPS=25, DELAY=1000/FPS;
+    const IN=8, HOLD=14, OUT=6, FPS=30, DELAY=1000/FPS;
     const GAP = Math.max(3, (IN+HOLD+OUT) >> 2);
     const TOTAL = GAP*(comments.length-1) + IN+HOLD+OUT + 6;
     const POSITIONS = [[6,52],[6,34],[38,52],[38,34],[6,68],[38,68]];
@@ -1962,7 +1962,7 @@ $("exportVideo").onclick = async () => {
         if(frac>0){if(!bEls[key])bEls[key]={el:null};bEls[key].el=makeVBubble(c,frac,pos[0],pos[1]);}
       }
       await new Promise(r=>requestAnimationFrame(r));
-      const snap = await html2canvas(postStage,{scale:1,useCORS:true,backgroundColor:null});
+      const snap = await html2canvas(postStage,{scale:2,useCORS:true,backgroundColor:null});
       ctx.clearRect(0,0,W,H);
       ctx.drawImage(snap,0,0,W,H);
       setStatus(`영상 생성 중… ${frame+1}/${TOTAL}`);
@@ -1971,7 +1971,7 @@ $("exportVideo").onclick = async () => {
     Object.values(bEls).forEach(b=>b?.el?.remove());
 
     // 끝 정지 1초
-    const finalSnap = await html2canvas(postStage,{scale:1,useCORS:true,backgroundColor:null});
+    const finalSnap = await html2canvas(postStage,{scale:2,useCORS:true,backgroundColor:null});
     ctx.drawImage(finalSnap,0,0,W,H);
     await new Promise(r=>setTimeout(r,1000));
 
@@ -2009,17 +2009,9 @@ $("exportGif").onclick = async () => {
   setStatus("GIF 생성 중…");
   const prevSel = selSticker;
 
-  // 캡처 헬퍼 — 고해상도로 찍은 뒤 GSCALE 크기로 다운샘플
+  // 캡처 헬퍼 — 2배 해상도 캡처
   async function snap(GSCALE){
-    const full = await html2canvas(postStage, {scale:1, useCORS:true, backgroundColor:null});
-    if(GSCALE >= 1) return full;
-    // 목표 크기로 다운샘플
-    const tw = Math.round(full.width  * GSCALE);
-    const th = Math.round(full.height * GSCALE);
-    const small = document.createElement("canvas");
-    small.width = tw; small.height = th;
-    small.getContext("2d").drawImage(full, 0, 0, tw, th);
-    return small;
+    return await html2canvas(postStage, {scale:GSCALE, useCORS:true, backgroundColor:null});
   }
 
   // 말풍선을 고정 불투명도로 카드 위 지정 위치에 붙임
@@ -2089,21 +2081,19 @@ $("exportGif").onclick = async () => {
     const prevTransform = postStage.style.transform;
     postStage.style.transform = "none";
     const w = postStage.offsetWidth, h = postStage.offsetHeight;
-    const GSCALE = 0.9; // 해상도 낮춰 용량 대폭 절감
-    const gif = new GIF({ workers:2, quality:6,  // quality 낮을수록 압축 강함
-      dither: false,
+    const GSCALE = 2;
+    const gif = new GIF({ workers:2, quality:3,
       width:Math.round(w*GSCALE), height:Math.round(h*GSCALE),
       workerScript: workerURL });
 
     const comments = state.comments.length ? state.comments
       : [{who:"@friend_01", text:"이 사진 너무 좋다 🩷", color:state.colorBubble}];
 
-    // ── 타이밍 파라미터 (프레임 줄여 용량 절감) ──
-    const IN   = 4;   // 등장 프레임
-    const HOLD = 6;   // 유지 프레임
-    const OUT  = 3;   // 퇴장 프레임
-    const DELAY = 80; // ms/frame — 약간 느리게 해서 프레임 수 ↓
-    const GAP   = Math.max(2, (IN+HOLD+OUT) >> 2); // 댓글간 등장 간격
+    const IN   = 6;   // 등장 프레임
+    const HOLD = 10;  // 유지 프레임
+    const OUT  = 5;   // 퇴장 프레임
+    const DELAY = 60; // ms/frame
+    const GAP   = Math.max(3, (IN+HOLD+OUT) >> 2);
 
     // 위치 분산 (left%, bottom%)
     const POSITIONS = [
