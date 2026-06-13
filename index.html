@@ -1051,18 +1051,24 @@ function applyImgTransform(){
   if(rv) rv.textContent = state.imgRotate + "°";
 }
 
-/* 이미지 칸 비율: 원본이면 사진 비율, 아니면 지정 비율 */
+/* 이미지 칸 비율: 칸만 비율 적용, 사진은 항상 원본 비율 유지 */
 function applyImgFrame(){
-  let ratio;
+  let Rf; // 칸 비율 (가로/세로)
   if(state.imgFrame === "original"){
-    ratio = (state.image && state.imgNatRatio) ? state.imgNatRatio : 1;
+    Rf = (state.image && state.imgNatRatio) ? state.imgNatRatio : 1;
   }else{
     const [w,h] = state.imgFrame.split("/").map(Number);
-    ratio = w/h;
+    Rf = w/h;
   }
-  postImage.style.aspectRatio = ratio + " / 1";
-  // 첨부 이미지는 항상 원본 비율 유지(잘림·왜곡 없음). 사용자가 확대/이동으로 조절.
-  postImageEl.style.objectFit = "contain";
+  postImage.style.aspectRatio = Rf + " / 1";
+  // 사진을 칸 안에 '비율 유지'로 넣기 (object-fit 의존 X → 내보내기에서도 안 늘어남)
+  const Ri = state.imgNatRatio || 1;
+  let wPct, hPct;
+  if(Ri >= Rf){ wPct = 100; hPct = (Rf/Ri)*100; }
+  else        { hPct = 100; wPct = (Ri/Rf)*100; }
+  postImageEl.style.width  = wPct + "%";
+  postImageEl.style.height = hPct + "%";
+  postImageEl.style.objectFit = "fill"; // 요소 크기가 이미 원본 비율 → 늘어나지 않음
 }
 
 /* ===================== 카드 그림자 ===================== */
@@ -1838,18 +1844,19 @@ $("exportGif").onclick = async () => {
     const prevTransform = postStage.style.transform;
     postStage.style.transform = "none";
     const w = postStage.offsetWidth, h = postStage.offsetHeight;
-    const gif = new GIF({ workers:2, quality:8, width:w*2, height:h*2, workerScript: workerURL });
+    const GSCALE = 1.6; // 캡처 배율(생성 속도 ↑)
+    const gif = new GIF({ workers:2, quality:10, width:Math.round(w*GSCALE), height:Math.round(h*GSCALE), workerScript: workerURL });
 
     const c = state.comments[0] || {who:"@id", text:"댓글"};
     const bubble = showBubble(c, {target:"post", left:10, bottom:26});
     bubble.style.animationPlayState = "paused";
 
-    const FRAMES = 14, DURATION = 3500;
+    const FRAMES = 16, SPAN = 3500, PLAY_DELAY = 70; // SPAN: 애니메이션 전체, PLAY_DELAY: 재생 속도(작을수록 빠름)
     for(let i = 0; i < FRAMES; i++){
-      bubble.style.animationDelay = `-${(i/(FRAMES-1)) * DURATION}ms`;
+      bubble.style.animationDelay = `-${(i/(FRAMES-1)) * SPAN}ms`;
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-      const canvas = await html2canvas(postStage, {scale:2, useCORS:true, backgroundColor:null});
-      gif.addFrame(canvas, {delay: DURATION / FRAMES});
+      const canvas = await html2canvas(postStage, {scale:GSCALE, useCORS:true, backgroundColor:null});
+      gif.addFrame(canvas, {delay: PLAY_DELAY});
       setStatus(`GIF 녹화 중… ${i+1}/${FRAMES}`);
     }
     bubble.remove();
