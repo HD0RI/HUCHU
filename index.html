@@ -2471,14 +2471,15 @@ $("exportGif").onclick = async () => {
     const workerBlob=await fetch("https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js").then(r=>r.blob());
     const workerURL=URL.createObjectURL(workerBlob);
 
-    // 베이스 캔버스: 말풍선 없는 현재 화면을 한 번만 캡처
+    // ── 카드만 캡처 (postStage 아닌 post 기준) ──
     postStage.classList.add("exporting");
     selSticker=null; renderStickers();
     const prevT=postStage.style.transform;
     postStage.style.transform="none";
     await new Promise(r=>requestAnimationFrame(r));
 
-    const base=await html2canvas(postStage,{scale:1.2,useCORS:true,backgroundColor:null,logging:false});
+    // 카드(post) 기준으로 캡처 → 배경여백 없이 딱 카드 크기
+    const base=await html2canvas(post,{scale:1.5,useCORS:true,backgroundColor:null,logging:false});
     const W=base.width, H=base.height;
 
     const gif=new GIF({workers:2,quality:3,width:W,height:H,workerScript:workerURL});
@@ -2486,104 +2487,89 @@ $("exportGif").onclick = async () => {
     const oc=document.createElement("canvas");
     oc.width=W; oc.height=H;
     const ctx=oc.getContext("2d");
-    const DPR=1.2;
+    const S=1.5; // scale
 
-    // 말풍선을 Canvas 2D로 직접 그림 (반투명 픽셀 없음)
-    // alpha: 0.0~1.0 — GIF용이므로 0/0.5/1 세 단계만 사용
-    function drawBubble(c, posLeft, posBottom, alpha){
-      if(alpha<=0) return;
+    function drawBubble(c, xPct, yPct){
       const col=c.color||state.colorBubble;
       const bs=state.bubbleStyle||{};
       const shape=bs.shape||"round";
-      const FS=13*DPR, PAD=9*DPR, BW=2*DPR;
-      const R=shape==="pill"||shape==="thought"?999:13*DPR;
-
-      ctx.save();
-      // alpha가 0.5면 흰색+테두리 색을 배경과 혼합한 고정 색으로 표현
-      const bgAlpha = alpha>=1 ? 1 : 0.55; // 0.55로 고정 (반중간)
-      ctx.globalAlpha = bgAlpha;
+      const FS=14*S, PAD=10*S, BW=2*S;
+      const R=shape==="pill"||shape==="thought"?999:13*S;
 
       ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
       const whoW=ctx.measureText(c.who+" ").width;
       ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
       const msgW=ctx.measureText(c.text).width;
-      const bW=Math.min(whoW+msgW+PAD*2, W*0.62);
+      const bW=whoW+msgW+PAD*2;
       const bH=FS+PAD*2;
+      const tailH=8*S;
 
-      // 카드 영역 안으로 위치 클램핑
-      const rawCx = (posLeft/100)*W;
-      const rawCy = H - (posBottom/100)*H;
-      const cx = Math.min(Math.max(rawCx, bW/2+4*DPR), W-bW/2-4*DPR);
-      const cy = Math.min(Math.max(rawCy, bH+12*DPR), H-4*DPR);
-      const bx=cx-bW/2, by=cy-bH;
+      // 위치: xPct/yPct는 카드 기준 %
+      // x: 말풍선 왼쪽 끝이 카드 안에 들어오게
+      const margin=8*S;
+      let bx=W*(xPct/100);
+      bx=Math.max(margin, Math.min(bx, W-bW-margin));
+      // y: 말풍선 아래가 카드 안에 들어오게 (yPct=0이 아래, 100이 위)
+      let by=H*(1-yPct/100)-bH-tailH;
+      by=Math.max(margin, Math.min(by, H-bH-tailH-margin));
 
       // 박스
       ctx.fillStyle="#ffffff";
       ctx.strokeStyle=col;
       ctx.lineWidth=BW;
       ctx.beginPath();
-      ctx.roundRect(bx, by, bW, bH, Math.min(R, bH/2));
-      ctx.fill(); ctx.stroke();
+      ctx.roundRect(bx,by,bW,bH,Math.min(R,bH/2));
+      ctx.fill();ctx.stroke();
 
       // 꼬리
+      const tx=bx+16*S;
       ctx.fillStyle=col;
       ctx.beginPath();
-      ctx.moveTo(bx+14*DPR, by+bH);
-      ctx.lineTo(bx+14*DPR+4*DPR, by+bH+7*DPR);
-      ctx.lineTo(bx+14*DPR+12*DPR, by+bH);
-      ctx.closePath(); ctx.fill();
+      ctx.moveTo(tx,by+bH);ctx.lineTo(tx+5*S,by+bH+tailH);ctx.lineTo(tx+13*S,by+bH);
+      ctx.closePath();ctx.fill();
       ctx.fillStyle="#ffffff";
       ctx.beginPath();
-      ctx.moveTo(bx+14*DPR+BW, by+bH-1);
-      ctx.lineTo(bx+14*DPR+4*DPR, by+bH+4*DPR);
-      ctx.lineTo(bx+14*DPR+11*DPR, by+bH-1);
-      ctx.closePath(); ctx.fill();
+      ctx.moveTo(tx+BW,by+bH-1);ctx.lineTo(tx+5*S,by+bH+tailH-3*S);ctx.lineTo(tx+12*S,by+bH-1);
+      ctx.closePath();ctx.fill();
 
       // 텍스트
-      ctx.globalAlpha = bgAlpha;
       ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
       ctx.fillStyle=col;
-      ctx.fillText(c.who+" ", bx+PAD, by+PAD+FS*0.85);
+      ctx.fillText(c.who+" ",bx+PAD,by+PAD+FS*0.82);
       ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
       ctx.fillStyle="#3a3a3a";
-      const availW = bW - PAD*2 - whoW;
-      ctx.fillText(c.text, bx+PAD+whoW, by+PAD+FS*0.85);
-
-      ctx.restore();
+      ctx.fillText(c.text,bx+PAD+whoW,by+PAD+FS*0.82);
     }
 
-    const comments=state.comments.length?state.comments:[{who:"@friend",text:"💕",color:state.colorBubble}];
-    // 위치를 카드 안쪽에 배치 (20~75% 범위)
-    const POSITIONS=[[10,52],[38,38],[10,38],[38,52],[10,65],[38,65]];
-    // 프레임 구성: 등장(불투명) → 유지 → 반투명(사라지는 느낌) → 없음
-    const IN=2, HOLD=8, FADE=2, DELAY=100;
-    const GAP=Math.ceil((IN+HOLD+FADE)/2);
+    const comments=state.comments.length?state.comments
+      :[{who:"@friend",text:"💕",color:state.colorBubble}];
+
+    // 위치: [x%, y%] — 카드 기준, x=왼쪽, y=아래
+    const POS=[[6,54],[6,38],[6,68],[42,54],[42,38],[42,68]];
+    const SHOW=9, DELAY=110;
+    const GAP=Math.ceil(SHOW*0.6);
     const startAt=comments.map((_,i)=>i*GAP);
-    const TOTAL=startAt[comments.length-1]+IN+HOLD+FADE+3;
+    const TOTAL=startAt[comments.length-1]+SHOW+3;
 
     for(let frame=0;frame<TOTAL;frame++){
       ctx.clearRect(0,0,W,H);
       ctx.drawImage(base,0,0);
-
       for(let ci=0;ci<comments.length;ci++){
         const f=frame-startAt[ci];
-        const pos=POSITIONS[ci%POSITIONS.length];
-        let alpha=0;
-        if(f>=0 && f<IN)           alpha=1;           // 등장: 바로 불투명
-        else if(f>=IN && f<IN+HOLD) alpha=1;           // 유지: 불투명
-        else if(f>=IN+HOLD && f<IN+HOLD+FADE) alpha=0.5; // 퇴장: 반투명 단계
-        if(alpha>0) drawBubble(comments[ci], pos[0], pos[1], alpha);
+        if(f>=0&&f<SHOW){
+          const pos=POS[ci%POS.length];
+          drawBubble(comments[ci],pos[0],pos[1]);
+        }
       }
-
       gif.addFrame(ctx,{delay:DELAY,copy:true});
       setStatus(`GIF 생성 중… ${frame+1}/${TOTAL}`);
       await new Promise(r=>requestAnimationFrame(r));
     }
 
-    // 마지막 베이스 (정지)
+    // 마지막 프레임 (말풍선 없음)
     ctx.clearRect(0,0,W,H);
     ctx.drawImage(base,0,0);
-    gif.addFrame(ctx,{delay:700,copy:true});
+    gif.addFrame(ctx,{delay:800,copy:true});
 
     postStage.style.transform=prevT;
     postStage.classList.remove("exporting");
@@ -2593,7 +2579,7 @@ $("exportGif").onclick = async () => {
     gif.on("finished",blob=>{
       const mb=(blob.size/1024/1024).toFixed(1);
       downloadURL(URL.createObjectURL(blob),"huchu.gif");
-      setStatus(`GIF 저장! (${mb}MB${+mb>5?" — 트위터 5MB 초과, 댓글 줄여보세요":"  ✅ 트위터 업로드 가능"})`);
+      setStatus(`GIF 저장 완료! (${mb}MB${+mb>5?" — 5MB 초과, 댓글 줄여보세요":"  ✅ 트위터 업로드 가능"})`);
       btns.forEach(b=>b.disabled=false);
     });
     gif.render();
