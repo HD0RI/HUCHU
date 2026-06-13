@@ -1832,8 +1832,35 @@ $("resetBtn").onclick = () => {
 $("exportGif").onclick = async () => {
   const btns = [$("exportGif"), $("exportPng")];
   btns.forEach(b => b.disabled = true);
-  setStatus("GIF 녹화 중… (잠시만요)");
+  setStatus("GIF 생성 중…");
   const prevSel = selSticker;
+
+  // 캡처 헬퍼 (말풍선 없는 베이스 프레임)
+  async function snap(GSCALE){
+    return await html2canvas(postStage, {scale:GSCALE, useCORS:true, backgroundColor:null});
+  }
+
+  // 말풍선을 고정 불투명도로 카드 위 지정 위치에 붙임
+  function placeBubble(comment, frac){
+    const b = document.createElement("div");
+    b.className = "bubble";
+    b.style.setProperty("--bcol", comment.color || state.colorBubble);
+    const bs = state.bubbleStyle || {};
+    b.classList.add("shape-"+(bs.shape||"round"));
+    b.style.animation = "none";
+    b.style.opacity = frac;
+    b.style.transform = `translateY(${(1-frac)*12}px) scale(${0.92+(0.08*frac)})`;
+    b.style.maxWidth = "68%";
+    const w = document.createElement("span"); w.className="who"; w.textContent=comment.who;
+    const m = document.createElement("span"); m.textContent=comment.text;
+    b.append(w,m);
+    // 카드 왼쪽 아래 영역에 고정 배치
+    b.style.left  = "8%";
+    b.style.bottom = "26%";
+    post.appendChild(b);
+    return b;
+  }
+
   try{
     const workerBlob = await fetch("https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js")
       .then(r => r.blob());
@@ -1844,22 +1871,62 @@ $("exportGif").onclick = async () => {
     const prevTransform = postStage.style.transform;
     postStage.style.transform = "none";
     const w = postStage.offsetWidth, h = postStage.offsetHeight;
-    const GSCALE = 1.6; // 캡처 배율(생성 속도 ↑)
-    const gif = new GIF({ workers:2, quality:10, width:Math.round(w*GSCALE), height:Math.round(h*GSCALE), workerScript: workerURL });
+    const GSCALE = 1.5;
+    const gif = new GIF({ workers:2, quality:10,
+      width:Math.round(w*GSCALE), height:Math.round(h*GSCALE),
+      workerScript: workerURL });
 
-    const c = state.comments[0] || {who:"@id", text:"댓글"};
-    const bubble = showBubble(c, {target:"post", left:10, bottom:26});
-    bubble.style.animationPlayState = "paused";
+    const comments = state.comments.length ? state.comments
+      : [{who:"@friend_01", text:"이 사진 너무 좋다 🩷", color:state.colorBubble}];
+    const HOLD = 6;   // 말풍선 유지 프레임 수
+    const IN   = 4;   // 등장 프레임 수
+    const OUT  = 3;   // 퇴장 프레임 수
+    const PAUSE= 3;   // 말풍선 사이 빈 프레임
+    const DELAY= 80;  // ms/frame
+    let total = 0;
 
-    const FRAMES = 16, SPAN = 3500, PLAY_DELAY = 70; // SPAN: 애니메이션 전체, PLAY_DELAY: 재생 속도(작을수록 빠름)
-    for(let i = 0; i < FRAMES; i++){
-      bubble.style.animationDelay = `-${(i/(FRAMES-1)) * SPAN}ms`;
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-      const canvas = await html2canvas(postStage, {scale:GSCALE, useCORS:true, backgroundColor:null});
-      gif.addFrame(canvas, {delay: PLAY_DELAY});
-      setStatus(`GIF 녹화 중… ${i+1}/${FRAMES}`);
+    for(let ci=0; ci<comments.length; ci++){
+      const c = comments[ci];
+      // 등장
+      for(let f=0;f<IN;f++){
+        const b = placeBubble(c, (f+1)/IN);
+        await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+        const cv = await snap(GSCALE);
+        gif.addFrame(cv, {delay:DELAY});
+        b.remove();
+        setStatus(`GIF 생성 중… 댓글 ${ci+1}/${comments.length} 등장 ${f+1}`);
+      }
+      // 유지
+      for(let f=0;f<HOLD;f++){
+        const b = placeBubble(c, 1);
+        await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+        const cv = await snap(GSCALE);
+        gif.addFrame(cv, {delay:DELAY});
+        b.remove();
+        setStatus(`GIF 생성 중… 댓글 ${ci+1}/${comments.length} 유지 ${f+1}`);
+      }
+      // 퇴장
+      for(let f=0;f<OUT;f++){
+        const b = placeBubble(c, 1-(f+1)/OUT);
+        await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+        const cv = await snap(GSCALE);
+        gif.addFrame(cv, {delay:DELAY});
+        b.remove();
+        setStatus(`GIF 생성 중… 댓글 ${ci+1}/${comments.length} 퇴장 ${f+1}`);
+      }
+      // 빈 프레임
+      if(ci < comments.length-1){
+        for(let f=0;f<PAUSE;f++){
+          const cv = await snap(GSCALE);
+          gif.addFrame(cv, {delay:DELAY});
+          setStatus(`GIF 생성 중… 다음 댓글 준비`);
+        }
+      }
     }
-    bubble.remove();
+    // 맨 끝에 빈 정지 프레임 (루프 시작 전 잠깐 멈춤)
+    const finalCv = await snap(GSCALE);
+    gif.addFrame(finalCv, {delay:600});
+
     postStage.style.transform = prevTransform;
     postStage.classList.remove("exporting");
     selSticker = prevSel; renderStickers();
