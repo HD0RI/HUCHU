@@ -2462,81 +2462,111 @@ $("resetBtn").onclick = () => {
 /* ===================== GIF 내보내기 ===================== */
 $("exportGif").onclick = async () => {
   closeModal();
-  const btns = [$("exportGif"), $("exportPng")];
+  const btns=[$("exportGif"),$("exportPng")];
   btns.forEach(b=>b.disabled=true);
-  setStatus("GIF 생성 중… (트위터용 최적화)");
-  const prevSel = selSticker;
-
-  // 트위터 GIF 제한: 5MB, 최대 1280px
-  const TWITTER_MAX_PX = 600; // 짧은 변 기준 (충분히 작게)
-  const GSCALE = Math.min(1.5, TWITTER_MAX_PX / Math.min(postStage.offsetWidth, postStage.offsetHeight));
-
-  async function snap(){
-    return await html2canvas(postStage,{scale:GSCALE,useCORS:true,backgroundColor:null,logging:false});
-  }
-
-  function makeGifBubble(comment, frac, posLeft, posBottom){
-    const bs=state.bubbleStyle||{};
-    const shape=bs.shape||"round";
-    const col=comment.color||state.colorBubble;
-    const radius=(shape==="pill"||shape==="thought")?"999px":"14px";
-    const pad=(shape==="pill"||shape==="thought")?"9px 18px":"10px 14px";
-    const b=document.createElement("div");
-    b.style.cssText=`position:absolute;max-width:62%;background:#fff;border:2.5px solid ${col};border-radius:${radius};padding:${pad};color:#3a3a3a;font-size:14px;line-height:1.5;font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;opacity:1;z-index:20;left:${posLeft}%;bottom:${posBottom}%;pointer-events:none;`;
-    const w=document.createElement("span");w.style.cssText=`font-weight:800;margin-right:5px;color:${col};`;w.textContent=comment.who;
-    const m=document.createElement("span");m.textContent=comment.text;
-    b.append(w,m);
-    if(shape!=="thought"&&shape!=="none"){
-      const sv=document.createElementNS("http://www.w3.org/2000/svg","svg");
-      sv.setAttribute("width","18");sv.setAttribute("height","12");sv.setAttribute("viewBox","0 0 18 12");
-      sv.style.cssText="position:absolute;bottom:-12px;left:18px;overflow:visible;";
-      const o=document.createElementNS("http://www.w3.org/2000/svg","polygon");o.setAttribute("points","0,0 18,0 5,12");o.setAttribute("fill",col);
-      const i=document.createElementNS("http://www.w3.org/2000/svg","polygon");i.setAttribute("points","2.5,0 18,0 6.5,9.5");i.setAttribute("fill","#fff");
-      sv.append(o,i);b.appendChild(sv);
-    }
-    post.appendChild(b);
-    return b;
-  }
+  setStatus("GIF 생성 중…");
+  const prevSel=selSticker;
 
   try{
-    const workerBlob = await fetch("https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js").then(r=>r.blob());
-    const workerURL = URL.createObjectURL(workerBlob);
+    const workerBlob=await fetch("https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js").then(r=>r.blob());
+    const workerURL=URL.createObjectURL(workerBlob);
 
+    // ── 베이스 캔버스: html2canvas로 한 번만 찍음 ──
     postStage.classList.add("exporting");
     selSticker=null; renderStickers();
     const prevT=postStage.style.transform;
     postStage.style.transform="none";
-    const w=Math.round(postStage.offsetWidth*GSCALE);
-    const h=Math.round(postStage.offsetHeight*GSCALE);
-    const gif=new GIF({workers:2,quality:4,width:w,height:h,workerScript:workerURL});
+    await new Promise(r=>requestAnimationFrame(r));
+
+    const base=await html2canvas(postStage,{scale:1.2,useCORS:true,backgroundColor:null,logging:false});
+    const W=base.width,H=base.height;
+
+    const gif=new GIF({workers:2,quality:3,width:W,height:H,workerScript:workerURL});
+
+    // ── 말풍선을 Canvas 2D로 직접 그림 (반투명 없음) ──
+    const oc=document.createElement("canvas");
+    oc.width=W; oc.height=H;
+    const ctx=oc.getContext("2d");
+    const DPR=1.2;
+
+    function drawBubbleDirect(c, posLeft, posBottom){
+      const col=c.color||state.colorBubble;
+      const bs=state.bubbleStyle||{};
+      const shape=bs.shape||"round";
+      const FS=13*DPR, PAD=9*DPR, BW=2.5*DPR;
+      const R=shape==="pill"||shape==="thought"?99*DPR:13*DPR;
+
+      ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
+      const whoW=ctx.measureText(c.who+" ").width;
+      ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
+      const msgW=ctx.measureText(c.text).width;
+      const bW=whoW+msgW+PAD*2;
+      const bH=FS+PAD*2;
+      const cx=(posLeft/100)*W;
+      const cy=H-(posBottom/100)*H;
+      const bx=cx-bW/2;
+      const by=cy-bH;
+
+      // 박스 (완전 불투명, 그림자 없음)
+      ctx.fillStyle="#ffffff";
+      ctx.strokeStyle=col;
+      ctx.lineWidth=BW;
+      ctx.beginPath();
+      ctx.roundRect(bx,by,bW,bH,Math.min(R,bH/2));
+      ctx.fill();
+      ctx.stroke();
+
+      // 꼬리 (SVG 대신 직접)
+      ctx.fillStyle=col;
+      ctx.beginPath();
+      ctx.moveTo(bx+R*0.7,by+bH);
+      ctx.lineTo(bx+R*0.7+4*DPR,by+bH+7*DPR);
+      ctx.lineTo(bx+R*0.7+12*DPR,by+bH);
+      ctx.closePath();ctx.fill();
+      // 꼬리 내부 흰색
+      ctx.fillStyle="#ffffff";
+      ctx.beginPath();
+      ctx.moveTo(bx+R*0.7+BW,by+bH-1);
+      ctx.lineTo(bx+R*0.7+4*DPR,by+bH+4*DPR);
+      ctx.lineTo(bx+R*0.7+11*DPR,by+bH-1);
+      ctx.closePath();ctx.fill();
+
+      // 텍스트
+      ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
+      ctx.fillStyle=col;
+      ctx.fillText(c.who+" ",bx+PAD,by+PAD+FS*0.85);
+      ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
+      ctx.fillStyle="#3a3a3a";
+      ctx.fillText(c.text,bx+PAD+whoW,by+PAD+FS*0.85);
+    }
 
     const comments=state.comments.length?state.comments:[{who:"@friend",text:"💕",color:state.colorBubble}];
-    // GIF는 반투명 불가 → 등장 스케일 팝, 퇴장 즉시 제거
-    const SHOW=1, HOLD=10, DELAY=80, GAP=Math.max(2, HOLD>>1);
-    const POSITIONS=[[6,52],[6,34],[38,52],[38,34],[6,68],[38,68]];
+    const POSITIONS=[[8,52],[40,36],[8,36],[40,52],[8,68],[40,68]];
+    const HOLD=9, DELAY=90, GAP=Math.max(2,HOLD>>1);
     const startAt=comments.map((_,i)=>i*GAP);
-    const TOTAL=startAt[comments.length-1]+SHOW+HOLD+4;
-    const bEls={};
+    const TOTAL=startAt[comments.length-1]+HOLD+3;
 
     for(let frame=0;frame<TOTAL;frame++){
+      // 베이스 그리기
+      ctx.clearRect(0,0,W,H);
+      ctx.drawImage(base,0,0);
+      // 보여야 할 말풍선만 그리기
       for(let ci=0;ci<comments.length;ci++){
-        const f=frame-startAt[ci],c=comments[ci],pos=POSITIONS[ci%POSITIONS.length],key=`c${ci}`;
-        if(bEls[key]?.el){bEls[key].el.remove();bEls[key].el=null;}
-        // 완전히 보이거나(1) 안 보이거나(0) — 반투명 없음
-        const visible = (f>=0 && f<SHOW+HOLD);
-        if(visible){
-          if(!bEls[key])bEls[key]={el:null};
-          bEls[key].el=makeGifBubble(c,1,pos[0],pos[1]);
+        const f=frame-startAt[ci];
+        if(f>=0&&f<HOLD){
+          drawBubbleDirect(comments[ci],POSITIONS[ci%POSITIONS.length][0],POSITIONS[ci%POSITIONS.length][1]);
         }
       }
-      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-      const cv=await snap();
-      gif.addFrame(cv,{delay:DELAY});
+      // 캔버스 복사해서 GIF 프레임으로
+      gif.addFrame(ctx,{delay:DELAY,copy:true});
       setStatus(`GIF 생성 중… ${frame+1}/${TOTAL}`);
+      await new Promise(r=>requestAnimationFrame(r));
     }
-    Object.values(bEls).forEach(b=>b?.el?.remove());
-    const finalCv=await snap();
-    gif.addFrame(finalCv,{delay:500});
+
+    // 마지막 베이스 프레임
+    ctx.clearRect(0,0,W,H);
+    ctx.drawImage(base,0,0);
+    gif.addFrame(ctx,{delay:600,copy:true});
 
     postStage.style.transform=prevT;
     postStage.classList.remove("exporting");
@@ -2546,7 +2576,7 @@ $("exportGif").onclick = async () => {
     gif.on("finished",blob=>{
       const mb=(blob.size/1024/1024).toFixed(1);
       downloadURL(URL.createObjectURL(blob),"huchu.gif");
-      setStatus(`GIF 저장 완료! (${mb}MB${+mb>5?" — 트위터 5MB 초과, 댓글 수를 줄여보세요":"  ✅ 트위터 업로드 가능"})`);
+      setStatus(`GIF 저장 완료! (${mb}MB${+mb>5?" — 트위터 5MB 초과":"  ✅ 트위터 업로드 가능"})`);
       btns.forEach(b=>b.disabled=false);
     });
     gif.render();
@@ -2554,6 +2584,7 @@ $("exportGif").onclick = async () => {
     postStage.classList.remove("exporting");
     selSticker=prevSel; renderStickers();
     setStatus("오류: "+err.message);
+    console.error(err);
     btns.forEach(b=>b.disabled=false);
   }
 };
