@@ -2471,7 +2471,7 @@ $("exportGif").onclick = async () => {
     const workerBlob=await fetch("https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js").then(r=>r.blob());
     const workerURL=URL.createObjectURL(workerBlob);
 
-    // ── 베이스 캔버스: html2canvas로 한 번만 찍음 ──
+    // 베이스 캔버스: 말풍선 없는 현재 화면을 한 번만 캡처
     postStage.classList.add("exporting");
     selSticker=null; renderStickers();
     const prevT=postStage.style.transform;
@@ -2479,94 +2479,111 @@ $("exportGif").onclick = async () => {
     await new Promise(r=>requestAnimationFrame(r));
 
     const base=await html2canvas(postStage,{scale:1.2,useCORS:true,backgroundColor:null,logging:false});
-    const W=base.width,H=base.height;
+    const W=base.width, H=base.height;
 
     const gif=new GIF({workers:2,quality:3,width:W,height:H,workerScript:workerURL});
 
-    // ── 말풍선을 Canvas 2D로 직접 그림 (반투명 없음) ──
     const oc=document.createElement("canvas");
     oc.width=W; oc.height=H;
     const ctx=oc.getContext("2d");
     const DPR=1.2;
 
-    function drawBubbleDirect(c, posLeft, posBottom){
+    // 말풍선을 Canvas 2D로 직접 그림 (반투명 픽셀 없음)
+    // alpha: 0.0~1.0 — GIF용이므로 0/0.5/1 세 단계만 사용
+    function drawBubble(c, posLeft, posBottom, alpha){
+      if(alpha<=0) return;
       const col=c.color||state.colorBubble;
       const bs=state.bubbleStyle||{};
       const shape=bs.shape||"round";
-      const FS=13*DPR, PAD=9*DPR, BW=2.5*DPR;
-      const R=shape==="pill"||shape==="thought"?99*DPR:13*DPR;
+      const FS=13*DPR, PAD=9*DPR, BW=2*DPR;
+      const R=shape==="pill"||shape==="thought"?999:13*DPR;
+
+      ctx.save();
+      // alpha가 0.5면 흰색+테두리 색을 배경과 혼합한 고정 색으로 표현
+      const bgAlpha = alpha>=1 ? 1 : 0.55; // 0.55로 고정 (반중간)
+      ctx.globalAlpha = bgAlpha;
 
       ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
       const whoW=ctx.measureText(c.who+" ").width;
       ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
       const msgW=ctx.measureText(c.text).width;
-      const bW=whoW+msgW+PAD*2;
+      const bW=Math.min(whoW+msgW+PAD*2, W*0.62);
       const bH=FS+PAD*2;
-      const cx=(posLeft/100)*W;
-      const cy=H-(posBottom/100)*H;
-      const bx=cx-bW/2;
-      const by=cy-bH;
 
-      // 박스 (완전 불투명, 그림자 없음)
+      // 카드 영역 안으로 위치 클램핑
+      const rawCx = (posLeft/100)*W;
+      const rawCy = H - (posBottom/100)*H;
+      const cx = Math.min(Math.max(rawCx, bW/2+4*DPR), W-bW/2-4*DPR);
+      const cy = Math.min(Math.max(rawCy, bH+12*DPR), H-4*DPR);
+      const bx=cx-bW/2, by=cy-bH;
+
+      // 박스
       ctx.fillStyle="#ffffff";
       ctx.strokeStyle=col;
       ctx.lineWidth=BW;
       ctx.beginPath();
-      ctx.roundRect(bx,by,bW,bH,Math.min(R,bH/2));
-      ctx.fill();
-      ctx.stroke();
+      ctx.roundRect(bx, by, bW, bH, Math.min(R, bH/2));
+      ctx.fill(); ctx.stroke();
 
-      // 꼬리 (SVG 대신 직접)
+      // 꼬리
       ctx.fillStyle=col;
       ctx.beginPath();
-      ctx.moveTo(bx+R*0.7,by+bH);
-      ctx.lineTo(bx+R*0.7+4*DPR,by+bH+7*DPR);
-      ctx.lineTo(bx+R*0.7+12*DPR,by+bH);
-      ctx.closePath();ctx.fill();
-      // 꼬리 내부 흰색
+      ctx.moveTo(bx+14*DPR, by+bH);
+      ctx.lineTo(bx+14*DPR+4*DPR, by+bH+7*DPR);
+      ctx.lineTo(bx+14*DPR+12*DPR, by+bH);
+      ctx.closePath(); ctx.fill();
       ctx.fillStyle="#ffffff";
       ctx.beginPath();
-      ctx.moveTo(bx+R*0.7+BW,by+bH-1);
-      ctx.lineTo(bx+R*0.7+4*DPR,by+bH+4*DPR);
-      ctx.lineTo(bx+R*0.7+11*DPR,by+bH-1);
-      ctx.closePath();ctx.fill();
+      ctx.moveTo(bx+14*DPR+BW, by+bH-1);
+      ctx.lineTo(bx+14*DPR+4*DPR, by+bH+4*DPR);
+      ctx.lineTo(bx+14*DPR+11*DPR, by+bH-1);
+      ctx.closePath(); ctx.fill();
 
       // 텍스트
+      ctx.globalAlpha = bgAlpha;
       ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
       ctx.fillStyle=col;
-      ctx.fillText(c.who+" ",bx+PAD,by+PAD+FS*0.85);
+      ctx.fillText(c.who+" ", bx+PAD, by+PAD+FS*0.85);
       ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
       ctx.fillStyle="#3a3a3a";
-      ctx.fillText(c.text,bx+PAD+whoW,by+PAD+FS*0.85);
+      const availW = bW - PAD*2 - whoW;
+      ctx.fillText(c.text, bx+PAD+whoW, by+PAD+FS*0.85);
+
+      ctx.restore();
     }
 
     const comments=state.comments.length?state.comments:[{who:"@friend",text:"💕",color:state.colorBubble}];
-    const POSITIONS=[[8,52],[40,36],[8,36],[40,52],[8,68],[40,68]];
-    const HOLD=9, DELAY=90, GAP=Math.max(2,HOLD>>1);
+    // 위치를 카드 안쪽에 배치 (20~75% 범위)
+    const POSITIONS=[[10,52],[38,38],[10,38],[38,52],[10,65],[38,65]];
+    // 프레임 구성: 등장(불투명) → 유지 → 반투명(사라지는 느낌) → 없음
+    const IN=2, HOLD=8, FADE=2, DELAY=100;
+    const GAP=Math.ceil((IN+HOLD+FADE)/2);
     const startAt=comments.map((_,i)=>i*GAP);
-    const TOTAL=startAt[comments.length-1]+HOLD+3;
+    const TOTAL=startAt[comments.length-1]+IN+HOLD+FADE+3;
 
     for(let frame=0;frame<TOTAL;frame++){
-      // 베이스 그리기
       ctx.clearRect(0,0,W,H);
       ctx.drawImage(base,0,0);
-      // 보여야 할 말풍선만 그리기
+
       for(let ci=0;ci<comments.length;ci++){
         const f=frame-startAt[ci];
-        if(f>=0&&f<HOLD){
-          drawBubbleDirect(comments[ci],POSITIONS[ci%POSITIONS.length][0],POSITIONS[ci%POSITIONS.length][1]);
-        }
+        const pos=POSITIONS[ci%POSITIONS.length];
+        let alpha=0;
+        if(f>=0 && f<IN)           alpha=1;           // 등장: 바로 불투명
+        else if(f>=IN && f<IN+HOLD) alpha=1;           // 유지: 불투명
+        else if(f>=IN+HOLD && f<IN+HOLD+FADE) alpha=0.5; // 퇴장: 반투명 단계
+        if(alpha>0) drawBubble(comments[ci], pos[0], pos[1], alpha);
       }
-      // 캔버스 복사해서 GIF 프레임으로
+
       gif.addFrame(ctx,{delay:DELAY,copy:true});
       setStatus(`GIF 생성 중… ${frame+1}/${TOTAL}`);
       await new Promise(r=>requestAnimationFrame(r));
     }
 
-    // 마지막 베이스 프레임
+    // 마지막 베이스 (정지)
     ctx.clearRect(0,0,W,H);
     ctx.drawImage(base,0,0);
-    gif.addFrame(ctx,{delay:600,copy:true});
+    gif.addFrame(ctx,{delay:700,copy:true});
 
     postStage.style.transform=prevT;
     postStage.classList.remove("exporting");
@@ -2576,7 +2593,7 @@ $("exportGif").onclick = async () => {
     gif.on("finished",blob=>{
       const mb=(blob.size/1024/1024).toFixed(1);
       downloadURL(URL.createObjectURL(blob),"huchu.gif");
-      setStatus(`GIF 저장 완료! (${mb}MB${+mb>5?" — 트위터 5MB 초과":"  ✅ 트위터 업로드 가능"})`);
+      setStatus(`GIF 저장! (${mb}MB${+mb>5?" — 트위터 5MB 초과, 댓글 줄여보세요":"  ✅ 트위터 업로드 가능"})`);
       btns.forEach(b=>b.disabled=false);
     });
     gif.render();
