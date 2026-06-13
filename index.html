@@ -2471,23 +2471,29 @@ $("exportGif").onclick = async () => {
     const workerBlob=await fetch("https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js").then(r=>r.blob());
     const workerURL=URL.createObjectURL(workerBlob);
 
-    // ── 카드만 캡처 (postStage 아닌 post 기준) ──
+    // postStage 전체 캡처 (배경 포함)
     postStage.classList.add("exporting");
     selSticker=null; renderStickers();
     const prevT=postStage.style.transform;
     postStage.style.transform="none";
     await new Promise(r=>requestAnimationFrame(r));
 
-    // 카드(post) 기준으로 캡처 → 배경여백 없이 딱 카드 크기
-    const base=await html2canvas(post,{scale:1.5,useCORS:true,backgroundColor:null,logging:false});
+    const S=1.5;
+    const base=await html2canvas(postStage,{scale:S,useCORS:true,backgroundColor:null,logging:false});
     const W=base.width, H=base.height;
 
-    const gif=new GIF({workers:2,quality:3,width:W,height:H,workerScript:workerURL});
+    // 카드(post)의 postStage 기준 오프셋 계산
+    const stageRect=postStage.getBoundingClientRect();
+    const postRect=post.getBoundingClientRect();
+    const cardX=(postRect.left-stageRect.left)*S;
+    const cardY=(postRect.top -stageRect.top )*S;
+    const cardW=postRect.width *S;
+    const cardH=postRect.height*S;
 
+    const gif=new GIF({workers:2,quality:3,width:W,height:H,workerScript:workerURL});
     const oc=document.createElement("canvas");
     oc.width=W; oc.height=H;
     const ctx=oc.getContext("2d");
-    const S=1.5; // scale
 
     function drawBubble(c, xPct, yPct){
       const col=c.color||state.colorBubble;
@@ -2503,15 +2509,15 @@ $("exportGif").onclick = async () => {
       const bW=whoW+msgW+PAD*2;
       const bH=FS+PAD*2;
       const tailH=8*S;
+      const mg=8*S;
 
-      // 위치: xPct/yPct는 카드 기준 %
-      // x: 말풍선 왼쪽 끝이 카드 안에 들어오게
-      const margin=8*S;
-      let bx=W*(xPct/100);
-      bx=Math.max(margin, Math.min(bx, W-bW-margin));
-      // y: 말풍선 아래가 카드 안에 들어오게 (yPct=0이 아래, 100이 위)
-      let by=H*(1-yPct/100)-bH-tailH;
-      by=Math.max(margin, Math.min(by, H-bH-tailH-margin));
+      // 카드 기준 % → 절대 px (캔버스 기준)
+      let bx=cardX+(cardW*(xPct/100));
+      let by=cardY+(cardH*(1-yPct/100))-bH-tailH;
+
+      // 카드 경계 안으로 클램핑
+      bx=Math.max(cardX+mg, Math.min(bx, cardX+cardW-bW-mg));
+      by=Math.max(cardY+mg, Math.min(by, cardY+cardH-bH-tailH-mg));
 
       // 박스
       ctx.fillStyle="#ffffff";
@@ -2543,8 +2549,6 @@ $("exportGif").onclick = async () => {
 
     const comments=state.comments.length?state.comments
       :[{who:"@friend",text:"💕",color:state.colorBubble}];
-
-    // 위치: [x%, y%] — 카드 기준, x=왼쪽, y=아래
     const POS=[[6,54],[6,38],[6,68],[42,54],[42,38],[42,68]];
     const SHOW=9, DELAY=110;
     const GAP=Math.ceil(SHOW*0.6);
@@ -2566,7 +2570,6 @@ $("exportGif").onclick = async () => {
       await new Promise(r=>requestAnimationFrame(r));
     }
 
-    // 마지막 프레임 (말풍선 없음)
     ctx.clearRect(0,0,W,H);
     ctx.drawImage(base,0,0);
     gif.addFrame(ctx,{delay:800,copy:true});
@@ -2579,7 +2582,7 @@ $("exportGif").onclick = async () => {
     gif.on("finished",blob=>{
       const mb=(blob.size/1024/1024).toFixed(1);
       downloadURL(URL.createObjectURL(blob),"huchu.gif");
-      setStatus(`GIF 저장 완료! (${mb}MB${+mb>5?" — 5MB 초과, 댓글 줄여보세요":"  ✅ 트위터 업로드 가능"})`);
+      setStatus(`GIF 저장 완료! (${mb}MB${+mb>5?" — 5MB 초과":"  ✅ 트위터 업로드 가능"})`);
       btns.forEach(b=>b.disabled=false);
     });
     gif.render();
