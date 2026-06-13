@@ -2479,100 +2479,139 @@ $("exportGif").onclick = async () => {
     postStage.style.transform="none";
     await new Promise(r=>requestAnimationFrame(r));
 
-    // 트위터 GIF 최적화: 짧은변 480px 이하로 축소 (용량 핵심)
-    const stageW=postStage.offsetWidth, stageH=postStage.offsetHeight;
-    const shortSide=Math.min(stageW,stageH);
-    const S=Math.min(1.0, 480/shortSide); // 최대 1.0 (원본보다 크게 안 함)
+    // 트위터 5MB 목표: 짧은변 400px로 제한
+    const shortSide=Math.min(postStage.offsetWidth, postStage.offsetHeight);
+    const S=Math.min(1.0, 400/shortSide);
+    const W=Math.round(postStage.offsetWidth*S);
+    const H=Math.round(postStage.offsetHeight*S);
 
-    const base=await html2canvas(postStage,{scale:S,useCORS:true,backgroundColor:null,logging:false});
-    const W=base.width, H=base.height;
-
-    // 카드 오프셋
-    const stageRect=postStage.getBoundingClientRect();
-    const postRect=post.getBoundingClientRect();
-    const cardX=(postRect.left-stageRect.left)*S;
-    const cardY=(postRect.top -stageRect.top )*S;
-    const cardW=postRect.width *S;
-    const cardH=postRect.height*S;
-
-    // 색상 수를 128로 제한 (256→128 만으로 용량 절반)
     const gif=new GIF({
-      workers:2, quality:7, colors:128,
-      width:W, height:H, workerScript:workerURL
+      workers:3, quality:5, colors:128,
+      width:W, height:H, workerScript:workerURL,
+      background:"#ffffff"
     });
-
-    const oc=document.createElement("canvas");
-    oc.width=W; oc.height=H;
-    const ctx=oc.getContext("2d");
-
-    function drawBubble(c, xPct, yPct){
-      const col=c.color||state.colorBubble;
-      const bs=state.bubbleStyle||{};
-      const shape=bs.shape||"round";
-      const FS=Math.max(11,Math.round(13*S));
-      const PAD=Math.max(7,Math.round(9*S));
-      const BW=Math.max(1.5,2*S);
-      const R=shape==="pill"||shape==="thought"?999:Math.round(11*S);
-
-      ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
-      const whoW=ctx.measureText(c.who+" ").width;
-      ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
-      const msgW=ctx.measureText(c.text).width;
-      const bW=whoW+msgW+PAD*2;
-      const bH=FS+PAD*2;
-      const tailH=Math.round(7*S);
-      const mg=Math.round(6*S);
-
-      let bx=cardX+(cardW*(xPct/100));
-      let by=cardY+(cardH*(1-yPct/100))-bH-tailH;
-      bx=Math.max(cardX+mg, Math.min(bx, cardX+cardW-bW-mg));
-      by=Math.max(cardY+mg, Math.min(by, cardY+cardH-bH-tailH-mg));
-
-      ctx.fillStyle="#ffffff";ctx.strokeStyle=col;ctx.lineWidth=BW;
-      ctx.beginPath();ctx.roundRect(bx,by,bW,bH,Math.min(R,bH/2));
-      ctx.fill();ctx.stroke();
-
-      const tx=bx+Math.round(14*S);
-      ctx.fillStyle=col;
-      ctx.beginPath();ctx.moveTo(tx,by+bH);ctx.lineTo(tx+Math.round(4*S),by+bH+tailH);ctx.lineTo(tx+Math.round(11*S),by+bH);
-      ctx.closePath();ctx.fill();
-      ctx.fillStyle="#ffffff";
-      ctx.beginPath();ctx.moveTo(tx+BW,by+bH-1);ctx.lineTo(tx+Math.round(4*S),by+bH+tailH-Math.round(2.5*S));ctx.lineTo(tx+Math.round(10*S),by+bH-1);
-      ctx.closePath();ctx.fill();
-
-      ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
-      ctx.fillStyle=col;ctx.fillText(c.who+" ",bx+PAD,by+PAD+FS*0.82);
-      ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
-      ctx.fillStyle="#3a3a3a";ctx.fillText(c.text,bx+PAD+whoW,by+PAD+FS*0.82);
-    }
 
     const comments=state.comments.length?state.comments
       :[{who:"@friend",text:"💕",color:state.colorBubble}];
-    const POS=[[6,54],[6,38],[6,68],[42,54],[42,38],[42,68]];
 
-    // 프레임 수 최소화: SHOW 줄이고 DELAY 늘림 (같은 시간, 더 적은 프레임)
-    const SHOW=6, DELAY=160;
-    const GAP=Math.ceil(SHOW*0.55);
-    const startAt=comments.map((_,i)=>i*GAP);
-    const TOTAL=startAt[comments.length-1]+SHOW+2;
+    // 카드 안 말풍선 위치 (post 기준 %)
+    const POS=[
+      [8,50],[8,34],[8,65],[40,50],[40,34],[40,65]
+    ];
 
-    for(let frame=0;frame<TOTAL;frame++){
-      ctx.clearRect(0,0,W,H);
-      ctx.drawImage(base,0,0);
-      for(let ci=0;ci<comments.length;ci++){
-        const f=frame-startAt[ci];
-        if(f>=0&&f<SHOW){
-          drawBubble(comments[ci],POS[ci%POS.length][0],POS[ci%POS.length][1]);
-        }
+    // 말풍선 DOM 생성 (실제 CSS 적용 — html2canvas가 정확히 렌더링)
+    function makeDomBubble(c, xPct, yPct){
+      const col=c.color||state.colorBubble;
+      const bs=state.bubbleStyle||{};
+      const shape=bs.shape||"round";
+      const radius=(shape==="pill"||shape==="thought")?"999px":"14px";
+      const pad=(shape==="pill"||shape==="thought")?"8px 16px":"9px 13px";
+
+      const b=document.createElement("div");
+      b.className="gif-bubble";
+
+      // post 기준 % 위치
+      const stageRect=postStage.getBoundingClientRect();
+      const postRect=post.getBoundingClientRect();
+      const cardXPct=(postRect.left-stageRect.left)/postStage.offsetWidth*100;
+      const cardYPct=(postRect.top-stageRect.top)/postStage.offsetHeight*100;
+      const cardWPct=postRect.width/postStage.offsetWidth*100;
+      const cardHPct=postRect.height/postStage.offsetHeight*100;
+
+      // 절대 % (postStage 기준)
+      let lPct=cardXPct + (xPct/100)*cardWPct;
+      let tPct=cardYPct + (yPct/100)*cardHPct;
+
+      b.style.cssText=`
+        position:absolute;
+        left:${lPct}%;
+        top:${tPct}%;
+        transform:translateY(-100%);
+        background:#fff;
+        border:2px solid ${col};
+        border-radius:${radius};
+        padding:${pad};
+        font-size:13px;
+        line-height:1.45;
+        font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+        white-space:nowrap;
+        z-index:20;
+        pointer-events:none;
+      `;
+      const w=document.createElement("span");
+      w.style.cssText=`font-weight:800;color:${col};margin-right:4px;`;
+      w.textContent=c.who;
+      const m=document.createElement("span");
+      m.style.cssText="color:#3a3a3a;";
+      m.textContent=c.text;
+      b.append(w,m);
+
+      // 꼬리 SVG
+      if(shape!=="thought"&&shape!=="none"){
+        const sv=document.createElementNS("http://www.w3.org/2000/svg","svg");
+        sv.setAttribute("width","16");sv.setAttribute("height","10");sv.setAttribute("viewBox","0 0 16 10");
+        sv.style.cssText="position:absolute;bottom:-10px;left:14px;overflow:visible;display:block;";
+        const o=document.createElementNS("http://www.w3.org/2000/svg","polygon");
+        o.setAttribute("points","0,0 16,0 5,10");o.setAttribute("fill",col);
+        const i=document.createElementNS("http://www.w3.org/2000/svg","polygon");
+        i.setAttribute("points","2,0 16,0 6,7.5");i.setAttribute("fill","#fff");
+        sv.append(o,i);b.appendChild(sv);
       }
-      gif.addFrame(ctx,{delay:DELAY,copy:true});
-      setStatus(`GIF 생성 중… ${frame+1}/${TOTAL}`);
-      await new Promise(r=>requestAnimationFrame(r));
+      postStage.appendChild(b);
+      return b;
     }
 
-    ctx.clearRect(0,0,W,H);
-    ctx.drawImage(base,0,0);
-    gif.addFrame(ctx,{delay:900,copy:true});
+    // 프레임 구성
+    // SHOW_ON: 말풍선 보이는 프레임, SHOW_OFF: 없는 프레임, 교차
+    const HOLD=7;  // 보이는 프레임 수
+    const GAP=4;   // 겹치는 프레임 (앞 말풍선과 겹침)
+    const DELAY=130; // ms/프레임
+    const startAt=comments.map((_,i)=>i*(HOLD-GAP));
+    const TOTAL=startAt[comments.length-1]+HOLD+3;
+    const bEls={};
+
+    async function snapGif(){
+      const cv=await html2canvas(postStage,{
+        scale:S, useCORS:true, backgroundColor:null,
+        logging:false, removeContainer:true
+      });
+      return cv;
+    }
+
+    for(let frame=0;frame<TOTAL;frame++){
+      // 이번 프레임에 보일 말풍선 결정
+      for(let ci=0;ci<comments.length;ci++){
+        const f=frame-startAt[ci];
+        const key=`c${ci}`;
+        const show=(f>=0&&f<HOLD);
+        if(show && !bEls[key]){
+          bEls[key]=makeDomBubble(comments[ci],POS[ci%POS.length][0],POS[ci%POS.length][1]);
+        }else if(!show && bEls[key]){
+          bEls[key].remove(); delete bEls[key];
+        }
+      }
+
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      const cv=await snapGif();
+
+      // 캔버스를 정확히 W×H로 리샘플
+      const tmp=document.createElement("canvas");
+      tmp.width=W; tmp.height=H;
+      tmp.getContext("2d").drawImage(cv,0,0,W,H);
+      gif.addFrame(tmp.getContext("2d"),{delay:DELAY,copy:true});
+
+      setStatus(`GIF 생성 중… ${frame+1}/${TOTAL}`);
+    }
+
+    // 모든 말풍선 제거
+    Object.values(bEls).forEach(b=>{try{b.remove()}catch(_){}});
+
+    // 마지막 정지 프레임
+    const finalCv=await snapGif();
+    const tmp2=document.createElement("canvas");
+    tmp2.width=W; tmp2.height=H;
+    tmp2.getContext("2d").drawImage(finalCv,0,0,W,H);
+    gif.addFrame(tmp2.getContext("2d"),{delay:900,copy:true});
 
     postStage.style.transform=prevT;
     postStage.classList.remove("exporting");
@@ -2587,7 +2626,10 @@ $("exportGif").onclick = async () => {
       btns.forEach(b=>b.disabled=false);
     });
     gif.render();
+
   }catch(err){
+    // 혹시 남은 말풍선 정리
+    postStage.querySelectorAll(".gif-bubble").forEach(b=>b.remove());
     postStage.classList.remove("exporting");
     selSticker=prevSel; renderStickers();
     setStatus("오류: "+err.message);
