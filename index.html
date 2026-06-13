@@ -2298,13 +2298,157 @@ $("copyBtn").onclick = async () => {
 };
 
 /* ===== 영상(WebM) 내보내기 ===== */
-// 영상도 말풍선 배치 모달을 거쳐서 저장
-$("exportVideo").onclick = () => {
+$("exportVideo").onclick = async () => {
   closeModal();
   if(!window.MediaRecorder){ setStatus("이 브라우저는 영상 저장을 지원하지 않아요 (Chrome 권장)."); return; }
-  $("bmPreview")._captured = false;
-  openBubbleModal(false);
-  // 모달이 열리면서 영상 저장 버튼이 활성화됨
+
+  const btns = [$("exportVideo")];
+  btns.forEach(b=>b.disabled=true);
+  setStatus("영상 녹화 준비 중…");
+
+  const prevSel = selSticker;
+  try{
+    // 줌 100%로, 선택 해제
+    postStage.classList.add("exporting");
+    selSticker = null; renderStickers();
+    const prevT = postStage.style.transform;
+    postStage.style.transform = "none";
+    await new Promise(r=>requestAnimationFrame(r));
+
+    // 오프스크린 캔버스에 postStage를 계속 그려 스트림 생성
+    const W = postStage.offsetWidth * 2;
+    const H = postStage.offsetHeight * 2;
+    const oc = document.createElement("canvas");
+    oc.width = W; oc.height = H;
+    const octx = oc.getContext("2d");
+
+    const mime = ["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm"]
+      .find(m=>MediaRecorder.isTypeSupported(m))||"video/webm";
+    const stream = oc.captureStream(30);
+    const rec = new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:10_000_000});
+    const chunks = [];
+    rec.ondataavailable = e=>e.data.size&&chunks.push(e.data);
+
+    // RAF 루프: postStage를 캔버스에 계속 그림
+    let recording = true;
+    const drawLoop = async () => {
+      while(recording){
+        try{
+          const snap = await html2canvas(postStage,{scale:2,useCORS:true,backgroundColor:null,logging:false,removeContainer:true});
+          octx.clearRect(0,0,W,H);
+          octx.drawImage(snap,0,0,W,H);
+        }catch(_){}
+        await new Promise(r=>requestAnimationFrame(r));
+      }
+    };
+
+    rec.start(40); // 40ms마다 청크
+    drawLoop(); // 병렬로 실행
+
+    // 댓글 목록으로 말풍선 순서대로 띄움
+    const comments = state.comments.length ? state.comments
+      : [{who:"@friend",text:"💕",color:state.colorBubble}];
+    const POSITIONS = [[6,52],[38,34],[6,34],[38,52],[6,68],[38,68]];
+    const IN_MS=500, HOLD_MS=1200, OUT_MS=500, GAP_MS=600;
+    const sleep = ms=>new Promise(r=>setTimeout(r,ms));
+
+    setStatus("영상 녹화 중…");
+
+    // 처음 0.5초: 정지 화면 (말풍선 없는 상태 유지)
+    await sleep(500);
+
+    // 댓글을 GAP_MS 간격으로 차례로 등장
+    for(let ci=0; ci<comments.length; ci++){
+      const c = comments[ci];
+      const pos = POSITIONS[ci % POSITIONS.length];
+      const col = c.color||state.colorBubble;
+      const bs = state.bubbleStyle||{};
+      const shape = bs.shape||"round";
+      const radius=(shape==="pill"||shape==="thought")?"999px":"14px";
+      const pad=(shape==="pill"||shape==="thought")?"9px 18px":"10px 14px";
+
+      // 말풍선 요소 생성 (CSS transition으로 자연스럽게)
+      const b = document.createElement("div");
+      b.style.cssText=`
+        position:absolute;
+        max-width:64%;
+        background:#fff;
+        border:2.5px solid ${col};
+        border-radius:${radius};
+        padding:${pad};
+        color:#3a3a3a;
+        font-size:14px;
+        line-height:1.5;
+        font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+        box-shadow:0 4px 16px rgba(0,0,0,.18);
+        left:${pos[0]}%;
+        bottom:${pos[1]}%;
+        z-index:20;
+        pointer-events:none;
+        opacity:0;
+        transform:translateY(14px) scale(0.88);
+        transition:opacity ${IN_MS}ms cubic-bezier(.22,.68,0,1.15),
+                   transform ${IN_MS}ms cubic-bezier(.22,.68,0,1.15);
+        will-change:opacity,transform;
+      `;
+      const w=document.createElement("span");
+      w.style.cssText=`font-weight:800;margin-right:5px;color:${col};`;
+      w.textContent=c.who;
+      const m=document.createElement("span");
+      m.textContent=c.text;
+      b.append(w,m);
+      // 꼬리 SVG
+      if(shape!=="thought"&&shape!=="none"){
+        const sv=document.createElementNS("http://www.w3.org/2000/svg","svg");
+        sv.setAttribute("width","18");sv.setAttribute("height","12");sv.setAttribute("viewBox","0 0 18 12");
+        sv.style.cssText="position:absolute;bottom:-12px;left:18px;overflow:visible;";
+        const o=document.createElementNS("http://www.w3.org/2000/svg","polygon");
+        o.setAttribute("points","0,0 18,0 5,12");o.setAttribute("fill",col);
+        const i=document.createElementNS("http://www.w3.org/2000/svg","polygon");
+        i.setAttribute("points","2.5,0 18,0 6.5,9.5");i.setAttribute("fill","#fff");
+        sv.append(o,i);b.appendChild(sv);
+      }
+      post.appendChild(b);
+
+      // 등장
+      await sleep(30);
+      b.style.opacity="1";
+      b.style.transform="translateY(0) scale(1)";
+      await sleep(IN_MS+HOLD_MS);
+
+      // 퇴장
+      b.style.transition=`opacity ${OUT_MS}ms ease, transform ${OUT_MS}ms ease`;
+      b.style.opacity="0";
+      b.style.transform="translateY(-12px) scale(0.9)";
+      await sleep(OUT_MS);
+      b.remove();
+
+      // 다음 댓글 전 GAP
+      if(ci<comments.length-1) await sleep(GAP_MS);
+    }
+
+    // 끝 0.8초 정지
+    await sleep(800);
+
+    recording = false;
+    rec.stop();
+    await new Promise(r=>{rec.onstop=r;});
+    const blob = new Blob(chunks,{type:mime});
+    downloadURL(URL.createObjectURL(blob),"huchu.webm");
+
+    postStage.style.transform = prevT;
+    postStage.classList.remove("exporting");
+    selSticker = prevSel; renderStickers();
+    setStatus("영상 저장 완료!");
+    btns.forEach(b=>b.disabled=false);
+
+  }catch(err){
+    postStage.classList.remove("exporting");
+    selSticker = prevSel; renderStickers();
+    setStatus("오류: "+err.message);
+    console.error(err);
+    btns.forEach(b=>b.disabled=false);
+  }
 };
 
 /* 초기화 */
