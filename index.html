@@ -177,6 +177,109 @@
   }
   .modal-close:hover{background:var(--panel-line);}
 
+  /* ===== 말풍선 배치 모달 ===== */
+  .bm-box{
+    background:#fff;border-radius:20px;
+    width:min(900px,96vw);max-height:94vh;
+    display:flex;flex-direction:column;
+    box-shadow:0 24px 60px rgba(0,0,0,.25);
+    overflow:hidden;
+  }
+  .bm-header{padding:16px 22px 12px;border-bottom:1px solid var(--panel-line);display:flex;flex-direction:column;gap:4px;}
+  .bm-hint{font-size:.78rem;color:var(--panel-sub);}
+  .bm-body{display:flex;flex:1;min-height:0;overflow:hidden;}
+  .bm-preview-wrap{flex:1;background:#B7A2A9;display:flex;align-items:center;justify-content:center;padding:20px;overflow:hidden;}
+  .bm-preview{
+    position:relative;
+    overflow:hidden;
+    border-radius:14px;
+    box-shadow:0 8px 30px rgba(0,0,0,.25);
+    cursor:crosshair;
+    user-select:none;
+  }
+  .bm-preview img{display:block;width:100%;height:auto;pointer-events:none;border-radius:14px;}
+  .bm-panel{
+    width:290px;flex-shrink:0;
+    border-left:1px solid var(--panel-line);
+    display:flex;flex-direction:column;
+    overflow:hidden;
+  }
+  .bm-panel-top{padding:14px;border-bottom:1px solid var(--panel-line);flex-shrink:0;}
+  .bm-panel-bottom{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--bg);}
+  .bm-section-title{font-size:.78rem;font-weight:800;color:var(--accent-deep);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;}
+  .bm-list-item{
+    display:flex;align-items:center;gap:7px;
+    padding:8px 10px;border-radius:8px;border:1px solid var(--panel-line);
+    cursor:pointer;font-size:.82rem;background:#fff;
+    transition:border-color .12s,background .12s;
+  }
+  .bm-list-item:hover{border-color:var(--accent);background:#FBE9EE;}
+  .bm-list-item.active{border-color:var(--accent-deep);background:#FBE9EE;}
+  .bm-list-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+  .bm-list-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--panel-text);}
+  .bm-edit-area{display:flex;flex-direction:column;gap:10px;}
+  .bm-edit-area input[type="text"]{width:100%;background:#fff;border:1px solid var(--panel-line);border-radius:8px;color:var(--panel-text);padding:8px 10px;font-size:.85rem;font-family:inherit;}
+  .bm-field-row{display:flex;align-items:center;gap:10px;font-size:.83rem;}
+  .bm-field-row label{flex:1;color:var(--panel-text);}
+  .bm-field-row input[type="color"]{width:38px;height:30px;border:1px solid var(--panel-line);border-radius:6px;padding:2px;cursor:pointer;}
+  .bm-footer{padding:12px 18px;border-top:1px solid var(--panel-line);display:flex;gap:8px;justify-content:flex-end;background:#fff;flex-shrink:0;}
+
+  /* 미리보기 위의 말풍선 핀 */
+  .bm-pin{
+    position:absolute;
+    pointer-events:auto;
+    cursor:grab;
+    z-index:10;
+    transform:translate(-50%, calc(-100% - 2px));
+  }
+  .bm-pin.active .bm-bubble-body{outline:2px solid var(--accent-deep);outline-offset:2px;}
+  .bm-bubble-body{
+    position:relative;
+    background:#fff;
+    border-radius:12px;
+    padding:7px 11px;
+    font-size:13px;
+    line-height:1.4;
+    white-space:nowrap;
+    max-width:180px;
+    overflow:visible;
+    text-overflow:ellipsis;
+    box-shadow:0 3px 10px rgba(0,0,0,.15);
+    margin-bottom:8px; /* 꼬리 공간 */
+  }
+  .bm-bubble-body .bm-tail{
+    position:absolute;
+    bottom:-9px;
+    left:14px;
+    width:0;height:0;
+    border-style:solid;
+    border-width:9px 6px 0 6px;
+    /* border-top-color는 JS에서 인라인으로 설정 */
+    border-left-color:transparent;
+    border-right-color:transparent;
+    border-bottom-color:transparent;
+  }
+  .bm-bubble-body .bm-tail::after{
+    content:"";
+    position:absolute;
+    bottom:2px;
+    left:-5px;
+    width:0;height:0;
+    border-style:solid;
+    border-width:8px 5px 0 5px;
+    border-top-color:#fff;
+    border-left-color:transparent;
+    border-right-color:transparent;
+    border-bottom-color:transparent;
+  }
+  .bm-bubble-who{font-weight:800;margin-right:4px;}
+
+  @media (max-width:640px){
+    .bm-body{flex-direction:column;}
+    .bm-panel{width:100%;border-left:none;border-top:1px solid var(--panel-line);max-height:50vh;}
+    .bm-preview-wrap{padding:12px;flex:0 0 auto;}
+  }
+
   .zoom-val{font-size:.8rem;font-weight:700;color:var(--panel-sub);min-width:42px;text-align:center;}
   /* 스티커 플로팅 조절 바 */
   .stk-float{
@@ -648,7 +751,55 @@
   <div class="topbar-status" id="status"></div>
 </header>
 
-<!-- ===== 저장 모달 ===== -->
+<!-- ===== 말풍선 배치 모달 ===== -->
+<div class="modal-backdrop" id="bubbleModal" style="display:none">
+  <div class="bm-box">
+    <div class="bm-header">
+      <div class="modal-title" style="margin:0">말풍선 배치</div>
+      <small class="bm-hint">말풍선을 추가하고 미리보기에서 끌어 위치를 정하세요</small>
+    </div>
+    <div class="bm-body">
+      <!-- 왼쪽: 미리보기 -->
+      <div class="bm-preview-wrap">
+        <div class="bm-preview" id="bmPreview"></div>
+      </div>
+      <!-- 오른쪽: 편집 패널 -->
+      <div class="bm-panel">
+        <!-- 상단: 목록 + 추가 -->
+        <div class="bm-panel-top">
+          <div class="bm-section-title">말풍선 목록</div>
+          <div id="bmList"></div>
+          <button class="btn" id="bmAdd" style="width:100%;margin-top:8px">+ 말풍선 추가</button>
+        </div>
+        <!-- 하단: 선택한 말풍선 편집 -->
+        <div class="bm-panel-bottom">
+          <div class="bm-section-title">선택한 말풍선 편집</div>
+          <div id="bmEdit" class="bm-edit-area">
+            <p class="hint" id="bmEditEmpty">말풍선을 선택하면 여기서 편집할 수 있어요.</p>
+            <div id="bmEditFields" style="display:none;flex-direction:column;gap:10px;">
+              <input type="text" id="bmWho" placeholder="@아이디">
+              <input type="text" id="bmText" placeholder="댓글 내용">
+              <div class="bm-field-row">
+                <label>말풍선 색상</label>
+                <input type="color" id="bmColor" value="#E8849B">
+              </div>
+              <div>
+                <div class="slider-row"><span style="font-size:.83rem">크기</span><b id="bmSizeVal" style="font-size:.83rem;color:var(--accent-deep)">100%</b></div>
+                <input type="range" id="bmSize" min="60" max="200" value="100" style="width:100%;accent-color:var(--accent)">
+              </div>
+              <button class="btn" id="bmDel" style="width:100%;color:#cc1133;border-color:#f9c6cf">🗑 이 말풍선 삭제</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="bm-footer">
+      <button class="btn" id="bmCancel">취소</button>
+      <button class="btn primary" id="bmSave">이 상태로 저장</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="exportModal" style="display:none">
   <div class="modal-box">
     <div class="modal-title">저장 방식 선택</div>
@@ -656,7 +807,7 @@
       <button class="modal-btn" id="exportPng">
         <span class="modal-icon">🖼️</span>
         <b>이미지 (PNG)</b>
-        <small>배경 포함 고화질</small>
+        <small>말풍선 배치 후 저장</small>
       </button>
       <button class="modal-btn" id="exportPngClear">
         <span class="modal-icon">✨</span>
@@ -1856,25 +2007,195 @@ $("openExportModal").onclick = openModal;
 $("closeExportModal").onclick = closeModal;
 $("exportModal").addEventListener("click", e => { if(e.target === $("exportModal")) closeModal(); });
 
-$("exportPng").onclick = async () => {
-  closeModal();
+/* ===== 말풍선 배치 모달 ===== */
+let bmBubbles = [];   // [{id,who,text,color,xp,yp,scale}, ...]
+let bmSel = null;     // 선택된 말풍선 id
+let bmSeq = 0;
+let bmTransparent = false;
+
+function openBubbleModal(transparent){
+  bmTransparent = transparent;
+  // 기존 댓글에서 초기화
+  bmBubbles = state.comments.map((c,i) => ({
+    id: "bm"+(bmSeq++), who: c.who, text: c.text, color: c.color||state.colorBubble,
+    xp: 10 + (i%2)*40, yp: 55 - (i%3)*15, scale: 1
+  }));
+  bmSel = bmBubbles[0]?.id || null;
+  renderBubbleModal();
+  $("bubbleModal").style.display = "flex";
+}
+function closeBubbleModal(){ $("bubbleModal").style.display = "none"; }
+
+function renderBubbleModal(){
+  renderBmPreview();
+  renderBmList();
+  renderBmEdit();
+}
+
+// ── 미리보기: 스테이지 스냅샷 + 핀 ──
+async function renderBmPreview(){
+  const wrap = $("bmPreview");
+  // 현재 스테이지를 캡처해 img로
+  if(!wrap._imgEl){
+    const img = document.createElement("img");
+    img.style.cssText = "display:block;width:100%;height:auto;pointer-events:none;border-radius:14px;";
+    wrap.appendChild(img);
+    wrap._imgEl = img;
+  }
+  // 매번 다시 찍을 필요 없이 처음 열 때만
+  if(!wrap._captured){
+    const pT = postStage.style.transform;
+    postStage.style.transform = "none";
+    const cv = await html2canvas(postStage,{scale:1.2,useCORS:true,backgroundColor:null,logging:false});
+    postStage.style.transform = pT;
+    wrap._imgEl.src = cv.toDataURL("image/png");
+    wrap._captured = true;
+    wrap._cvW = cv.width; wrap._cvH = cv.height;
+  }
+  // 핀 렌더
+  wrap.querySelectorAll(".bm-pin").forEach(p=>p.remove());
+  bmBubbles.forEach(b => {
+    const pin = document.createElement("div");
+    pin.className = "bm-pin" + (b.id===bmSel ? " active":"");
+    pin.dataset.id = b.id;
+    pin.style.left = b.xp + "%";
+    pin.style.top  = b.yp + "%";
+    const body = document.createElement("div");
+    body.className = "bm-bubble-body";
+    body.style.cssText += `border:2px solid ${b.color};transform:scale(${b.scale});transform-origin:bottom left;`;
+    const who = document.createElement("span");
+    who.className = "bm-bubble-who"; who.style.color = b.color; who.textContent = b.who;
+    const msg = document.createElement("span"); msg.textContent = b.text;
+    // 꼬리: CSS border-trick으로 body 안에 포함 (overflow:visible)
+    const tail = document.createElement("div");
+    tail.className = "bm-tail";
+    tail.style.borderTopColor = b.color;
+    body.append(who, msg, tail);
+    pin.appendChild(body);
+    attachBmPinDrag(pin, b);
+    wrap.appendChild(pin);
+  });
+}
+
+function attachBmPinDrag(pin, b){
+  pin.addEventListener("pointerdown", e => {
+    e.stopPropagation(); e.preventDefault();
+    bmSel = b.id; renderBmList(); renderBmEdit();
+    pin.classList.add("active");
+    pin.setPointerCapture(e.pointerId);
+    const rect = $("bmPreview").getBoundingClientRect();
+    function onMove(ev){
+      b.xp = clamp((ev.clientX - rect.left)/rect.width*100, 0, 98);
+      b.yp = clamp((ev.clientY - rect.top )/rect.height*100, 2, 98);
+      pin.style.left = b.xp+"%"; pin.style.top = b.yp+"%";
+      ev.preventDefault();
+    }
+    function onUp(){ pin.removeEventListener("pointermove",onMove); pin.removeEventListener("pointerup",onUp); }
+    pin.addEventListener("pointermove",onMove,{passive:false});
+    pin.addEventListener("pointerup",onUp);
+  });
+}
+
+function renderBmList(){
+  const list = $("bmList"); list.innerHTML = "";
+  bmBubbles.forEach(b => {
+    const item = document.createElement("div");
+    item.className = "bm-list-item" + (b.id===bmSel?" active":"");
+    const dot = document.createElement("div"); dot.className="bm-list-dot"; dot.style.background=b.color;
+    const lbl = document.createElement("span"); lbl.className="bm-list-label"; lbl.textContent = (b.who||"@") + " " + (b.text||"");
+    item.append(dot,lbl);
+    item.onclick = () => { bmSel=b.id; renderBmList(); renderBmEdit(); renderBmPreview(); };
+    list.appendChild(item);
+  });
+}
+
+function renderBmEdit(){
+  const b = bmBubbles.find(x=>x.id===bmSel);
+  $("bmEditEmpty").style.display = b?"none":"";
+  $("bmEditFields").style.display = b?"flex":"none";
+  if(!b) return;
+  $("bmWho").value = b.who;
+  $("bmText").value = b.text;
+  $("bmColor").value = b.color;
+  $("bmSize").value = Math.round(b.scale*100);
+  $("bmSizeVal").textContent = Math.round(b.scale*100)+"%";
+}
+
+// 편집 입력 이벤트
+["bmWho","bmText"].forEach(id=>{
+  $(id).oninput = () => {
+    const b=bmBubbles.find(x=>x.id===bmSel); if(!b) return;
+    b.who=$("bmWho").value; b.text=$("bmText").value;
+    renderBmList(); renderBmPreview();
+  };
+});
+$("bmColor").oninput = () => {
+  const b=bmBubbles.find(x=>x.id===bmSel); if(!b) return;
+  b.color=$("bmColor").value; renderBmList(); renderBmPreview();
+};
+$("bmSize").oninput = () => {
+  const b=bmBubbles.find(x=>x.id===bmSel); if(!b) return;
+  b.scale=+$("bmSize").value/100; $("bmSizeVal").textContent=$("bmSize").value+"%"; renderBmPreview();
+};
+$("bmAdd").onclick = () => {
+  const nb = {id:"bm"+(bmSeq++), who:"@id", text:"댓글", color:state.colorBubble, xp:15+Math.random()*40, yp:20+Math.random()*40, scale:1};
+  bmBubbles.push(nb); bmSel=nb.id; renderBubbleModal();
+};
+$("bmDel").onclick = () => {
+  bmBubbles = bmBubbles.filter(x=>x.id!==bmSel);
+  bmSel = bmBubbles[0]?.id||null; renderBubbleModal();
+};
+$("bmCancel").onclick = () => { closeBubbleModal(); $("bmPreview")._captured=false; };
+
+// 저장 실행
+$("bmSave").onclick = async () => {
   setStatus("이미지 생성 중…");
+  // 말풍선을 실제 스테이지에 임시로 붙임
+  const temps = bmBubbles.map(b => {
+    const el = makeBmBubbleEl(b);
+    post.appendChild(el);
+    return el;
+  });
   try{
-    const canvas = await captureCanvas(false);
-    downloadURL(canvas.toDataURL("image/png"), "huchu.png");
-    setStatus("PNG 저장 완료!");
-  }catch(err){ setStatus("오류: " + err.message); }
+    const canvas = await captureCanvas(bmTransparent);
+    temps.forEach(t=>t.remove());
+    closeBubbleModal();
+    $("bmPreview")._captured = false;
+    downloadURL(canvas.toDataURL("image/png"), bmTransparent?"huchu-clear.png":"huchu.png");
+    setStatus((bmTransparent?"투명 ":"")+"PNG 저장 완료!");
+  }catch(err){
+    temps.forEach(t=>t.remove());
+    setStatus("오류: "+err.message);
+  }
 };
 
-$("exportPngClear").onclick = async () => {
-  closeModal();
-  setStatus("투명 PNG 생성 중…");
-  try{
-    const canvas = await captureCanvas(true);
-    downloadURL(canvas.toDataURL("image/png"), "huchu-clear.png");
-    setStatus("투명 PNG 저장 완료!");
-  }catch(err){ setStatus("오류: " + err.message); }
-};
+// 실제 저장용 말풍선 요소 (html2canvas 호환 인라인 스타일)
+function makeBmBubbleEl(b){
+  const stageW = postStage.offsetWidth, stageH = postStage.offsetHeight;
+  const postRect = post.getBoundingClientRect();
+  const stageRect = postStage.getBoundingClientRect();
+  // xp/yp는 스테이지 기준 % → post 기준 px로 변환
+  const ax = (b.xp/100)*stageW - (postRect.left - stageRect.left);
+  const ay = (b.yp/100)*stageH - (postRect.top  - stageRect.top);
+  const col = b.color||state.colorBubble;
+  const s = b.scale||1;
+  const el = document.createElement("div");
+  el.style.cssText = `position:absolute;background:#fff;border:2.5px solid ${col};border-radius:14px;padding:9px 13px;color:#3a3a3a;font-size:${Math.round(14*s)}px;line-height:1.5;font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:20;left:${ax}px;top:${ay}px;transform:translate(-50%,-100%);white-space:nowrap;pointer-events:none;`;
+  const w=document.createElement("span"); w.style.cssText=`font-weight:800;margin-right:5px;color:${col};`; w.textContent=b.who;
+  const m=document.createElement("span"); m.textContent=b.text;
+  el.append(w,m);
+  const sv=document.createElementNS("http://www.w3.org/2000/svg","svg");
+  sv.setAttribute("width","16");sv.setAttribute("height","10");sv.setAttribute("viewBox","0 0 16 10");
+  sv.style.cssText="position:absolute;bottom:-10px;left:16px;overflow:visible;";
+  const o=document.createElementNS("http://www.w3.org/2000/svg","polygon");o.setAttribute("points","0,0 16,0 5,10");o.setAttribute("fill",col);
+  const i=document.createElementNS("http://www.w3.org/2000/svg","polygon");i.setAttribute("points","2.5,0 16,0 6,7.5");i.setAttribute("fill","#fff");
+  sv.append(o,i); el.appendChild(sv);
+  return el;
+}
+
+// PNG 버튼 → 모달 열기
+$("exportPng").onclick = () => { closeModal(); $("bmPreview")._captured=false; openBubbleModal(false); };
+$("exportPngClear").onclick = () => { closeModal(); $("bmPreview")._captured=false; openBubbleModal(true); };
 
 $("copyBtn").onclick = async () => {
   setStatus("복사 중…");
@@ -1899,96 +2220,152 @@ $("exportVideo").onclick = async () => {
   btns.forEach(b => b.disabled = true);
   setStatus("영상 준비 중…");
   const prevSel = selSticker;
+
   try{
+    // 1. 스테이지를 줌 100%로 고정, 선택 해제
     postStage.classList.add("exporting");
     selSticker = null; renderStickers();
     const prevTransform = postStage.style.transform;
     postStage.style.transform = "none";
+    await new Promise(r => requestAnimationFrame(r)); // 레이아웃 확정
 
-    // 캔버스 스트림 준비
-    const capCanvas = document.createElement("canvas");
-    const W = postStage.offsetWidth * 2, H = postStage.offsetHeight * 2;
-    capCanvas.width = W; capCanvas.height = H;
-    const ctx = capCanvas.getContext("2d");
-    const stream = capCanvas.captureStream(30); // 30fps
-    const mime = ["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm"].find(m=>MediaRecorder.isTypeSupported(m)) || "video/webm";
-    const rec = new MediaRecorder(stream, {mimeType:mime, videoBitsPerSecond:8_000_000});
+    // 2. 스테이지 요소를 직접 captureStream
+    const SW = postStage.offsetWidth, SH = postStage.offsetHeight;
+    let stream;
+    if(postStage.captureStream){
+      // 일부 브라우저에서 HTMLElement captureStream 지원
+      stream = postStage.captureStream(60);
+    }else{
+      // 대안: offscreen canvas에 스테이지를 복사해서 스트림
+      const oc = document.createElement("canvas");
+      oc.width = SW * 2; oc.height = SH * 2;
+      const octx = oc.getContext("2d");
+      let recording = true;
+      // RAF 루프로 스테이지를 2배로 계속 복사
+      (async function paint(){
+        while(recording){
+          const snap = await html2canvas(postStage,{scale:2,useCORS:true,backgroundColor:null,logging:false});
+          octx.clearRect(0,0,oc.width,oc.height);
+          octx.drawImage(snap,0,0,oc.width,oc.height);
+          await new Promise(r=>setTimeout(r,33)); // ~30fps
+        }
+      })();
+      stream = oc.captureStream(30);
+      stream._stopPaint = () => { recording = false; };
+    }
+
+    const mime = ["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm"]
+      .find(m => MediaRecorder.isTypeSupported(m)) || "video/webm";
+    const rec = new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond:12_000_000 });
     const chunks = [];
     rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+    rec.start(50);
 
+    // 3. 말풍선 애니메이션을 실제 CSS로 DOM에 붙임
     const comments = state.comments.length ? state.comments
       : [{who:"@friend_01", text:"이 사진 너무 좋다 🩷", color:state.colorBubble}];
-
-    const IN=8, HOLD=14, OUT=6, FPS=30, DELAY=1000/FPS;
-    const GAP = Math.max(3, (IN+HOLD+OUT) >> 2);
-    const TOTAL = GAP*(comments.length-1) + IN+HOLD+OUT + 6;
     const POSITIONS = [[6,52],[6,34],[38,52],[38,34],[6,68],[38,68]];
 
-    // 말풍선 만들기 (GIF용 placeBubble 재사용)
-    function makeVBubble(comment, frac, posLeft, posBottom){
+    // 각 댓글의 말풍선을 CSS transition으로 자연스럽게
+    const IN_MS   = 500;
+    const HOLD_MS = 1400;
+    const OUT_MS  = 400;
+    const GAP_MS  = 700; // 댓글 사이 간격
+
+    function makeLiveBubble(comment, posLeft, posBottom){
       const bs = state.bubbleStyle||{};
       const shape = bs.shape||"round";
       const col = comment.color||state.colorBubble;
       const radius = (shape==="pill"||shape==="thought")?"999px":"14px";
       const pad    = (shape==="pill"||shape==="thought")?"9px 18px":"10px 14px";
       const b = document.createElement("div");
-      b.style.cssText=`position:absolute;max-width:62%;background:#fff;border:2.5px solid ${col};border-radius:${radius};padding:${pad};color:#3a3a3a;font-size:14px;line-height:1.5;font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;box-shadow:0 3px 10px rgba(0,0,0,.12);opacity:${frac};transform:translateY(${(1-frac)*8}px) scale(${0.94+0.06*frac});z-index:20;left:${posLeft}%;bottom:${posBottom}%;pointer-events:none;`;
-      const w=document.createElement("span"); w.style.cssText=`font-weight:800;margin-right:5px;color:${col};`; w.textContent=comment.who;
-      const m=document.createElement("span"); m.textContent=comment.text;
+      b.style.cssText = `
+        position:absolute;
+        max-width:64%;
+        background:#fff;
+        border:2.5px solid ${col};
+        border-radius:${radius};
+        padding:${pad};
+        color:#3a3a3a;
+        font-size:14px;
+        line-height:1.5;
+        font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+        box-shadow:0 4px 16px rgba(0,0,0,.18);
+        left:${posLeft}%;
+        bottom:${posBottom}%;
+        z-index:20;
+        pointer-events:none;
+        opacity:0;
+        transform:translateY(12px) scale(0.9);
+        transition:opacity ${IN_MS}ms cubic-bezier(.22,.68,0,1.2),
+                   transform ${IN_MS}ms cubic-bezier(.22,.68,0,1.2);
+        will-change:opacity,transform;
+      `;
+      const w = document.createElement("span");
+      w.style.cssText = `font-weight:800;margin-right:5px;color:${col};`;
+      w.textContent = comment.who;
+      const m = document.createElement("span");
+      m.textContent = comment.text;
       b.append(w,m);
       if(shape!=="thought"&&shape!=="none"){
         const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");
-        svg.setAttribute("width","18");svg.setAttribute("height","12");svg.setAttribute("viewBox","0 0 18 12");
+        svg.setAttribute("width","18");svg.setAttribute("height","12");
+        svg.setAttribute("viewBox","0 0 18 12");
         svg.style.cssText="position:absolute;bottom:-12px;left:18px;overflow:visible;";
-        const o=document.createElementNS("http://www.w3.org/2000/svg","polygon");o.setAttribute("points","0,0 18,0 5,12");o.setAttribute("fill",col);
-        const i=document.createElementNS("http://www.w3.org/2000/svg","polygon");i.setAttribute("points","2.5,0 18,0 6.5,9.5");i.setAttribute("fill","#fff");
+        const o=document.createElementNS("http://www.w3.org/2000/svg","polygon");
+        o.setAttribute("points","0,0 18,0 5,12");o.setAttribute("fill",col);
+        const i=document.createElementNS("http://www.w3.org/2000/svg","polygon");
+        i.setAttribute("points","2.5,0 18,0 6.5,9.5");i.setAttribute("fill","#fff");
         svg.append(o,i);b.appendChild(svg);
       }
       post.appendChild(b);
       return b;
     }
 
-    rec.start();
-    const startAt = comments.map((_,i)=>i*GAP);
-    const bEls = {};
-    for(let frame=0; frame<TOTAL; frame++){
-      for(let ci=0;ci<comments.length;ci++){
-        const f=frame-startAt[ci], c=comments[ci], pos=POSITIONS[ci%POSITIONS.length], key=`c${ci}`;
-        if(bEls[key]?.el){bEls[key].el.remove();bEls[key].el=null;}
-        let frac=0;
-        if(f>=0&&f<IN) frac=(f+1)/IN;
-        else if(f>=IN&&f<IN+HOLD) frac=1;
-        else if(f>=IN+HOLD&&f<IN+HOLD+OUT) frac=1-((f-IN-HOLD+1)/OUT);
-        if(frac>0){if(!bEls[key])bEls[key]={el:null};bEls[key].el=makeVBubble(c,frac,pos[0],pos[1]);}
-      }
-      await new Promise(r=>requestAnimationFrame(r));
-      const snap = await html2canvas(postStage,{scale:2,useCORS:true,backgroundColor:null});
-      ctx.clearRect(0,0,W,H);
-      ctx.drawImage(snap,0,0,W,H);
-      setStatus(`영상 생성 중… ${frame+1}/${TOTAL}`);
-      await new Promise(r=>setTimeout(r,DELAY));
-    }
-    Object.values(bEls).forEach(b=>b?.el?.remove());
+    function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
-    // 끝 정지 1초
-    const finalSnap = await html2canvas(postStage,{scale:2,useCORS:true,backgroundColor:null});
-    ctx.drawImage(finalSnap,0,0,W,H);
-    await new Promise(r=>setTimeout(r,1000));
+    // 4. 각 댓글을 GAP_MS 간격으로 순서대로 등장시킴
+    //    마지막 댓글이 사라질 때까지 기다림
+    const bubblePromises = comments.map((c, ci) => async () => {
+      await sleep(ci * GAP_MS);
+      const pos = POSITIONS[ci % POSITIONS.length];
+      const b = makeLiveBubble(c, pos[0], pos[1]);
+      // 등장
+      await sleep(30); // 브라우저 layout 확정
+      b.style.opacity = "1";
+      b.style.transform = "translateY(0) scale(1)";
+      await sleep(IN_MS + HOLD_MS);
+      // 퇴장
+      b.style.transition = `opacity ${OUT_MS}ms ease, transform ${OUT_MS}ms ease`;
+      b.style.opacity = "0";
+      b.style.transform = "translateY(-10px) scale(0.92)";
+      await sleep(OUT_MS);
+      b.remove();
+    });
 
+    setStatus("영상 녹화 중…");
+    // 모든 댓글 애니메이션 병렬 실행
+    await Promise.all(bubblePromises.map(fn => fn()));
+    await sleep(600); // 끝 여유
+
+    // 5. 녹화 종료
+    if(stream._stopPaint) stream._stopPaint();
     rec.stop();
     await new Promise(r=>{ rec.onstop=r; });
-    const blob = new Blob(chunks,{type:mime});
+    const blob = new Blob(chunks, {type:mime});
     downloadURL(URL.createObjectURL(blob), "huchu.webm");
 
     postStage.style.transform = prevTransform;
     postStage.classList.remove("exporting");
     selSticker = prevSel; renderStickers();
-    setStatus("영상 저장 완료! (.webm — 대부분의 플레이어에서 재생됩니다)");
+    setStatus("영상 저장 완료!");
     btns.forEach(b=>b.disabled=false);
+
   }catch(err){
     postStage.classList.remove("exporting");
     selSticker = prevSel; renderStickers();
     setStatus("오류: "+err.message);
+    console.error(err);
     btns.forEach(b=>b.disabled=false);
   }
 };
