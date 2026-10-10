@@ -743,6 +743,7 @@
     <button class="btn" id="resetBtn">초기화</button>
     <button class="btn" id="copyBtn">복사</button>
     <button class="btn primary" id="openExportModal">저장하기 ▾</button>
+    <button class="btn" id="fullscreenBtn" title="전체화면 미리보기 (화면 녹화용)">⛶ 전체화면</button>
     <span class="tool-divider"></span>
     <button class="btn" id="exportJson">파일 저장</button>
     <label class="btn" id="importJsonLabel">파일 열기
@@ -752,7 +753,13 @@
   <div class="topbar-status" id="status"></div>
 </header>
 
-<!-- ===== 말풍선 배치 모달 ===== -->
+<!-- ===== 전체화면 미리보기 모달 ===== -->
+<div class="modal-backdrop" id="fullscreenModal" style="display:none;background:#000;z-index:300;">
+  <div id="fullscreenStage" style="position:relative;display:flex;align-items:center;justify-content:center;width:100%;height:100%;"></div>
+  <button id="fullscreenClose" style="position:fixed;top:16px;right:16px;z-index:310;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:1.2rem;padding:8px 14px;border-radius:999px;cursor:pointer;backdrop-filter:blur(4px);">✕ 닫기</button>
+  <div id="fullscreenHint" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:310;background:rgba(0,0,0,.55);color:#fff;font-size:.82rem;padding:8px 18px;border-radius:999px;text-align:center;pointer-events:none;">📱 화면 녹화 후 트위터에 업로드하세요 · 하트를 눌러 말풍선 미리보기</div>
+</div>
+
 <div class="modal-backdrop" id="bubbleModal" style="display:none">
   <div class="bm-box">
     <div class="bm-header">
@@ -796,7 +803,6 @@
     </div>
     <div class="bm-footer">
       <button class="btn" id="bmCancel">취소</button>
-      <button class="btn" id="bmSaveVideo">🎬 영상으로 저장</button>
       <button class="btn primary" id="bmSave">🖼️ 이미지로 저장</button>
     </div>
   </div>
@@ -821,10 +827,10 @@
         <b>GIF</b>
         <small>트위터용 · 5MB 최적화</small>
       </button>
-      <button class="modal-btn" id="exportVideo">
+      <button class="modal-btn" id="exportMp4">
         <span class="modal-icon">🎬</span>
-        <b>영상 (MP4)</b>
-        <small>트위터 업로드 가능</small>
+        <b>MP4 영상 · 추천</b>
+        <small>X(트위터) 업로드용</small>
       </button>
     </div>
     <button class="modal-close" id="closeExportModal">닫기</button>
@@ -2213,70 +2219,7 @@ function makeBmBubbleEl(b){
 }
 
 // 영상 저장 — 말풍선 배치 그대로 캡처해서 WebM으로
-$("bmSaveVideo").onclick = async () => {
-  if(!window.MediaRecorder){ setStatus("Chrome 권장 — 이 브라우저는 영상 저장 미지원"); return; }
-  setStatus("영상 생성 중…");
-  $("bmSave").disabled = true; $("bmSaveVideo").disabled = true;
 
-  // 말풍선을 스테이지에 임시 붙임
-  const temps = bmBubbles.map(b => { const el=makeBmBubbleEl(b); postStage.appendChild(el); return el; });
-
-  try{
-    postStage.classList.add("exporting");
-    selSticker = null; renderStickers();
-    const prevTransform = postStage.style.transform;
-    postStage.style.transform = "none";
-    await new Promise(r=>requestAnimationFrame(r));
-
-    // 현재 화면을 2배 해상도로 캡처
-    const snap = await html2canvas(postStage, {scale:2, useCORS:true, backgroundColor:null, logging:false});
-
-    // 캔버스에 고정 이미지로 그려서 스트림 녹화
-    const W = snap.width, H = snap.height;
-    const oc = document.createElement("canvas");
-    oc.width = W; oc.height = H;
-    const octx = oc.getContext("2d");
-    octx.drawImage(snap, 0, 0);
-
-    const mime = ["video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm"]
-      .find(m=>MediaRecorder.isTypeSupported(m)) || "video/webm";
-    const stream = oc.captureStream(30);
-    const rec = new MediaRecorder(stream, {mimeType:mime, videoBitsPerSecond:10_000_000});
-    const chunks = [];
-    rec.ondataavailable = e => e.data.size && chunks.push(e.data);
-    rec.start(100);
-
-    const DURATION = 3000; // 3초 유지
-    setStatus("영상 녹화 중… (3초)");
-
-    // 3초 동안 같은 프레임을 계속 그림 (매끄럽게)
-    const endTime = Date.now() + DURATION;
-    while(Date.now() < endTime){
-      octx.clearRect(0,0,W,H);
-      octx.drawImage(snap,0,0);
-      await new Promise(r=>requestAnimationFrame(r));
-    }
-
-    rec.stop();
-    await new Promise(r=>{rec.onstop=r;});
-    const blob = new Blob(chunks, {type:mime});
-    downloadURL(URL.createObjectURL(blob), "huchu.webm");
-
-    temps.forEach(t=>t.remove());
-    postStage.style.transform = prevTransform;
-    postStage.classList.remove("exporting");
-    selSticker = prevSel; renderStickers();
-    closeBubbleModal();
-    $("bmPreview")._captured = false;
-    setStatus("영상 저장 완료!");
-  }catch(err){
-    temps.forEach(t=>t.remove());
-    postStage.classList.remove("exporting");
-    selSticker = prevSel; renderStickers();
-    setStatus("오류: "+err.message);
-  }
-  $("bmSave").disabled = false; $("bmSaveVideo").disabled = false;
-};
 
 // PNG 버튼 → 모달 열기
 $("exportPng").onclick = () => { closeModal(); $("bmPreview")._captured=false; openBubbleModal(false); };
@@ -2298,159 +2241,346 @@ $("copyBtn").onclick = async () => {
 };
 
 /* ===== 영상(MP4) 내보내기 ===== */
-/* ===== 영상 내보내기 (깃허브 Pages 호환) ===== */
-$("exportVideo").onclick = async () => {
-  closeModal();
-  if(!window.MediaRecorder){ setStatus("이 브라우저는 영상 저장을 지원하지 않아요 (Chrome 권장)."); return; }
-  const btns=[$("exportVideo")];
-  btns.forEach(b=>b.disabled=true);
-  setStatus("영상 녹화 준비 중…");
-  const prevSel=selSticker;
 
+
+
+
+/* ===== MP4 내보내기 (WebCodecs H.264 + mp4-muxer, X 업로드 규격) ===== */
+let _muxerP = null;
+function loadMuxer(){
+  if(window.Mp4Muxer) return Promise.resolve();
+  if(_muxerP) return _muxerP;
+  _muxerP = new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.min.js";
+    s.onload=res; s.onerror=()=>{_muxerP=null; rej(new Error("MP4 라이브러리를 불러오지 못했어요"));};
+    document.head.appendChild(s);
+  });
+  return _muxerP;
+}
+
+async function pickH264(W,H,fps){
+  const cands=["avc1.640028","avc1.4d0028","avc1.42e028","avc1.42e01f"];
+  for(const codec of cands){
+    try{
+      const r=await VideoEncoder.isConfigSupported({codec,width:W,height:H,bitrate:6_000_000,framerate:fps});
+      if(r.supported) return codec;
+    }catch(_){}
+  }
+  return null;
+}
+
+$("exportMp4").onclick = async () => {
+  closeModal();
+  if(!("VideoEncoder" in window)){
+    setStatus("이 브라우저는 MP4 저장을 지원하지 않아요. Chrome·Edge·최신 Safari에서 열어주세요.");
+    return;
+  }
+  const prevSel=selSticker;
+  const prevT=postStage.style.transform;
+  const prevR=postStage.style.borderRadius;
   try{
-    // 베이스 이미지 한 번만 캡처
+    setStatus("MP4 준비 중…");
+    await loadMuxer();
+
+    // 1. 말풍선 없는 베이스 화면 1회 캡처 (모서리 투명 → 검정 방지 위해 radius 0)
     postStage.classList.add("exporting");
     selSticker=null; renderStickers();
-    const prevT=postStage.style.transform;
     postStage.style.transform="none";
-    await new Promise(r=>requestAnimationFrame(r));
+    postStage.style.borderRadius="0";
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+
+    const stW=postStage.offsetWidth, stH=postStage.offsetHeight;
+    const S=1.5;
+    const W=Math.round(stW*S/2)*2, H=Math.round(stH*S/2)*2;   // H.264는 짝수 크기
+    const base=await html2canvas(postStage,{scale:S,useCORS:true,backgroundColor:"#ffffff",logging:false});
 
     const stageRect=postStage.getBoundingClientRect();
     const postRect=post.getBoundingClientRect();
+    const sx=W/stW, sy=H/stH;
+    const cardX=(postRect.left-stageRect.left)*sx, cardY=(postRect.top-stageRect.top)*sy;
+    const cardW=postRect.width*sx, cardH=postRect.height*sy;
 
-    const S=2;
-    const base=await html2canvas(postStage,{scale:S,useCORS:true,backgroundColor:null,logging:false});
-    const W=base.width, H=base.height;
+    postStage.style.transform=prevT;
+    postStage.style.borderRadius=prevR;
+    postStage.classList.remove("exporting");
+    selSticker=prevSel; renderStickers();
 
-    const cardX=(postRect.left-stageRect.left)*S;
-    const cardY=(postRect.top -stageRect.top )*S;
-    const cardW=postRect.width*S;
-    const cardH=postRect.height*S;
+    // 2. 인코더 준비
+    const FPS=30;
+    const codec=await pickH264(W,H,FPS);
+    if(!codec) throw new Error("이 기기에서 H.264 인코딩을 지원하지 않아요");
 
-    // 오프스크린 캔버스 → captureStream
-    const oc=document.createElement("canvas");
-    oc.width=W; oc.height=H;
+    const {Muxer, ArrayBufferTarget}=Mp4Muxer;
+    const muxer=new Muxer({
+      target:new ArrayBufferTarget(),
+      video:{codec:"avc",width:W,height:H,frameRate:FPS},
+      fastStart:"in-memory"
+    });
+    let encErr=null;
+    const enc=new VideoEncoder({
+      output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta),
+      error:e=>{encErr=e;}
+    });
+    enc.configure({codec,width:W,height:H,bitrate:6_000_000,framerate:FPS,avc:{format:"avc"}});
+
+    // 3. 프레임 그리기
+    const oc=document.createElement("canvas"); oc.width=W; oc.height=H;
     const ctx=oc.getContext("2d");
-
-    const mime=["video/mp4","video/webm;codecs=vp9","video/webm;codecs=vp8","video/webm"]
-      .find(m=>MediaRecorder.isTypeSupported(m))||"video/webm";
-    const ext=mime.startsWith("video/mp4")?"mp4":"webm";
-    const stream=oc.captureStream(30);
-    const rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8_000_000});
-    const chunks=[];
-    rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
-
     const comments=state.comments.length?state.comments
       :[{who:"@friend",text:"💕",color:state.colorBubble}];
-    const POS=[[0.06,0.54],[0.06,0.38],[0.06,0.68],[0.42,0.54],[0.42,0.38],[0.42,0.68]];
-    const IN_MS=500,HOLD_MS=1200,OUT_MS=400,GAP_MS=500;
-    const TOTAL_MS=GAP_MS*(comments.length-1)+IN_MS+HOLD_MS+OUT_MS+800;
+    const POS=[[8,48],[40,32],[8,64],[40,52],[8,30],[40,68]];
+    const bs=state.bubbleStyle||{};
+    const shape=bs.shape||"round";
+    const FONT="'Apple SD Gothic Neo','Noto Sans KR',sans-serif";
+    const FS=13*S, PAD_X=13*S, PAD_Y=9*S, LH=FS*1.45, BWID=2*S;
+    const MAXW=cardW*0.72;
 
-    function drawBubbleFrame(c,xRt,yRt,opacity){
-      if(opacity<=0)return;
-      const col=c.color||state.colorBubble;
-      const bs=state.bubbleStyle||{};
-      const shape=bs.shape||"round";
-      const FS=14*S,PAD=10*S,BW=2*S;
-      const R=shape==="pill"||shape==="thought"?999:13*S;
+    // 말풍선 레이아웃(줄바꿈) 미리 계산
+    const layouts=comments.map(c=>{
+      ctx.font=`800 ${FS}px ${FONT}`;
+      const whoW=ctx.measureText((c.who||"")+" ").width;
+      ctx.font=`400 ${FS}px ${FONT}`;
+      const lines=[]; let cur="";
+      for(const ch of [...(c.text||"")]){
+        const lim=(lines.length===0?MAXW-PAD_X*2-whoW:MAXW-PAD_X*2);
+        if(ctx.measureText(cur+ch).width>lim && cur){ lines.push(cur); cur=ch.trimStart(); }
+        else cur+=ch;
+      }
+      lines.push(cur);
+      let wMax=whoW+ctx.measureText(lines[0]).width;
+      for(let k=1;k<lines.length;k++) wMax=Math.max(wMax,ctx.measureText(lines[k]).width);
+      const bw=Math.ceil(wMax+PAD_X*2), bh=Math.ceil(lines.length*LH+PAD_Y*2);
+      return {whoW,lines,bw,bh};
+    });
+
+    function drawBubble(ci,alpha,dy,scale){
+      const c=comments[ci], L=layouts[ci], col=c.color||state.colorBubble;
+      const p=POS[ci%POS.length];
+      const tail=(shape==="thought"||shape==="none")?0:8*S;
+      const mg=8*S;
+      let bx=cardX+cardW*p[0]/100;
+      let by=cardY+cardH*p[1]/100-L.bh-tail;
+      bx=Math.max(cardX+mg,Math.min(bx,cardX+cardW-L.bw-mg));
+      by=Math.max(cardY+mg,Math.min(by,cardY+cardH-L.bh-tail-mg));
+      const R=(shape==="pill"||shape==="thought")?L.bh/2:Math.min(14*S,L.bh/2);
 
       ctx.save();
-      ctx.globalAlpha=opacity;
-      ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
-      const whoW=ctx.measureText(c.who+" ").width;
-      ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
-      const msgW=ctx.measureText(c.text).width;
-      const bW=whoW+msgW+PAD*2;
-      const bH=FS+PAD*2;
-      const tailH=8*S;
-      const mg=8*S;
+      ctx.globalAlpha=alpha;
+      // 꼬리 끝을 기준점으로 살짝 커지며 등장
+      const ox=bx+18*S, oy=by+L.bh+tail;
+      ctx.translate(ox,oy+dy); ctx.scale(scale,scale); ctx.translate(-ox,-oy);
 
-      let bx=cardX+cardW*xRt;
-      let by=cardY+cardH*(1-yRt)-bH-tailH;
-      bx=Math.max(cardX+mg,Math.min(bx,cardX+cardW-bW-mg));
-      by=Math.max(cardY+mg,Math.min(by,cardY+cardH-bH-tailH-mg));
-
-      ctx.fillStyle="#fff";ctx.strokeStyle=col;ctx.lineWidth=BW;
-      ctx.beginPath();ctx.roundRect(bx,by,bW,bH,Math.min(R,bH/2));
-      ctx.fill();ctx.stroke();
-
-      const tx=bx+14*S;
-      ctx.fillStyle=col;
-      ctx.beginPath();ctx.moveTo(tx,by+bH);ctx.lineTo(tx+4*S,by+bH+tailH);ctx.lineTo(tx+12*S,by+bH);
-      ctx.closePath();ctx.fill();
+      ctx.shadowColor="rgba(0,0,0,.16)"; ctx.shadowBlur=10*S; ctx.shadowOffsetY=3*S;
       ctx.fillStyle="#fff";
-      ctx.beginPath();ctx.moveTo(tx+BW,by+bH-1);ctx.lineTo(tx+4*S,by+bH+tailH-3*S);ctx.lineTo(tx+11*S,by+bH-1);
-      ctx.closePath();ctx.fill();
+      ctx.beginPath(); ctx.roundRect(bx,by,L.bw,L.bh,R); ctx.fill();
+      ctx.shadowColor="transparent";
+      ctx.lineWidth=BWID; ctx.strokeStyle=col; ctx.stroke();
 
-      ctx.font=`800 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
-      ctx.fillStyle=col;ctx.fillText(c.who+" ",bx+PAD,by+PAD+FS*0.82);
-      ctx.font=`400 ${FS}px 'Apple SD Gothic Neo','Noto Sans KR',sans-serif`;
-      ctx.fillStyle="#3a3a3a";ctx.fillText(c.text,bx+PAD+whoW,by+PAD+FS*0.82);
+      if(tail){
+        const tx=bx+14*S;
+        ctx.beginPath(); ctx.moveTo(tx,by+L.bh-BWID/2); ctx.lineTo(tx+4*S,by+L.bh+tail); ctx.lineTo(tx+12*S,by+L.bh-BWID/2);
+        ctx.fillStyle="#fff"; ctx.fill();
+        ctx.lineWidth=BWID; ctx.strokeStyle=col; ctx.lineJoin="round";
+        ctx.beginPath(); ctx.moveTo(tx,by+L.bh); ctx.lineTo(tx+4*S,by+L.bh+tail); ctx.lineTo(tx+12*S,by+L.bh); ctx.stroke();
+        ctx.fillStyle="#fff"; ctx.fillRect(tx+BWID*0.6,by+L.bh-BWID*1.2,12*S-BWID*1.2,BWID*1.4);
+      }else if(shape==="thought"){
+        ctx.fillStyle="#fff"; ctx.strokeStyle=col; ctx.lineWidth=BWID;
+        ctx.beginPath(); ctx.arc(bx+22*S,by+L.bh+7*S,4.5*S,0,Math.PI*2); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(bx+15*S,by+L.bh+15*S,2.8*S,0,Math.PI*2); ctx.fill(); ctx.stroke();
+      }
+
+      ctx.textBaseline="alphabetic";
+      const y0=by+PAD_Y+FS*0.92;
+      ctx.font=`800 ${FS}px ${FONT}`; ctx.fillStyle=col;
+      ctx.fillText(c.who||"",bx+PAD_X,y0);
+      ctx.font=`400 ${FS}px ${FONT}`; ctx.fillStyle="#3a3a3a";
+      L.lines.forEach((ln,k)=>{
+        ctx.fillText(ln,bx+PAD_X+(k===0?L.whoW:0),y0+k*LH);
+      });
       ctx.restore();
     }
 
-    rec.start(33);
-    setStatus("영상 녹화 중…");
+    // 타이밍 (초)
+    const LEAD=0.4, IN=0.45, HOLD=1.4, OUT=0.4, GAP=0.75, TAILT=0.6;
+    const DUR=Math.max(3, LEAD+GAP*(comments.length-1)+IN+HOLD+OUT+TAILT);
+    const FRAMES=Math.round(DUR*FPS);
+    const easeOutBack=t=>{const c1=1.5,c3=c1+1;return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2);};
+    const easeIn=t=>t*t;
 
-    await new Promise(resolve=>{
-      let startMs=null;
-      function frame(ts){
-        if(!startMs) startMs=ts;
-        const t=ts-startMs;
-
-        ctx.clearRect(0,0,W,H);
-        ctx.drawImage(base,0,0);
-
-        for(let ci=0;ci<comments.length;ci++){
-          const local=t-ci*GAP_MS;
-          let opacity=0, oY=0;
-          if(local>=0&&local<IN_MS){
-            opacity=local/IN_MS;
-            oY=(1-opacity)*12*S;
-          }else if(local>=IN_MS&&local<IN_MS+HOLD_MS){
-            opacity=1; oY=0;
-          }else if(local>=IN_MS+HOLD_MS&&local<IN_MS+HOLD_MS+OUT_MS){
-            const p=(local-IN_MS-HOLD_MS)/OUT_MS;
-            opacity=1-p; oY=-8*S*p;
-          }
-          if(opacity>0){
-            const pos=POS[ci%POS.length];
-            // oY를 cardY에 반영
-            const savedCardY=cardY;
-            drawBubbleFrame(comments[ci],pos[0],pos[1],opacity);
-          }
-        }
-
-        const pct=Math.min(100,Math.round(t/TOTAL_MS*100));
-        setStatus(`영상 녹화 중… ${pct}%`);
-
-        if(t<TOTAL_MS) requestAnimationFrame(frame);
-        else resolve();
+    for(let f=0;f<FRAMES;f++){
+      if(encErr) throw encErr;
+      const t=f/FPS;
+      ctx.drawImage(base,0,0,W,H);
+      for(let ci=0;ci<comments.length;ci++){
+        const lt=t-LEAD-ci*GAP;
+        if(lt<0||lt>IN+HOLD+OUT) continue;
+        let a,dy,sc;
+        if(lt<IN){ const p=lt/IN; a=Math.min(1,p*1.6); dy=(1-easeOutBack(p))*14*S; sc=0.85+0.15*easeOutBack(p); }
+        else if(lt<IN+HOLD){ a=1; dy=0; sc=1; }
+        else { const p=easeIn((lt-IN-HOLD)/OUT); a=1-p; dy=-12*S*p; sc=1-0.06*p; }
+        drawBubble(ci,a,dy,sc);
       }
-      requestAnimationFrame(frame);
+      const vf=new VideoFrame(oc,{timestamp:Math.round(f*1e6/FPS),duration:Math.round(1e6/FPS)});
+      enc.encode(vf,{keyFrame:f%(FPS*2)===0});
+      vf.close();
+      while(enc.encodeQueueSize>8) await new Promise(r=>setTimeout(r,4));
+      if(f%6===0){ setStatus(`MP4 만드는 중… ${Math.round(f/FRAMES*100)}%`); await new Promise(r=>setTimeout(r,0)); }
+    }
+    await enc.flush();
+    enc.close();
+    muxer.finalize();
+
+    const blob=new Blob([muxer.target.buffer],{type:"video/mp4"});
+    downloadURL(URL.createObjectURL(blob),"huchu.mp4");
+    const mb=(blob.size/1024/1024).toFixed(1);
+    setStatus(`MP4 저장 완료! (${mb}MB · ${DUR.toFixed(1)}초) ✅ X에 바로 올릴 수 있어요`);
+  }catch(err){
+    postStage.style.transform=prevT;
+    postStage.style.borderRadius=prevR;
+    postStage.classList.remove("exporting");
+    selSticker=prevSel; renderStickers();
+    setStatus("MP4 오류: "+(err.message||err));
+    console.error(err);
+  }
+};
+
+/* ===== 전체화면 미리보기 (화면 녹화용) ===== */
+$("fullscreenBtn").onclick = () => {
+  const modal = $("fullscreenModal");
+  const stage = $("fullscreenStage");
+
+  // postStage를 복제해서 전체화면에 넣기
+  stage.innerHTML = "";
+  const clone = postStage.cloneNode(true);
+
+  // 화면 크기에 맞게 스케일
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const stageW = postStage.offsetWidth, stageH = postStage.offsetHeight;
+  const scale = Math.min(vw / stageW, vh / stageH) * 0.92;
+
+  clone.style.cssText = `
+    transform:scale(${scale});
+    transform-origin:center center;
+    border-radius:20px;
+    box-shadow:0 20px 60px rgba(0,0,0,.5);
+    pointer-events:none;
+    position:relative;
+    z-index:1;
+  `;
+  // 줌 transform 제거 (이미 scale 적용)
+  clone.style.transform = `scale(${scale})`;
+  stage.appendChild(clone);
+
+  modal.style.display = "flex";
+  modal.style.flexDirection = "column";
+  modal.style.alignItems = "center";
+  modal.style.justifyContent = "center";
+
+  // 브라우저 전체화면 요청
+  if(modal.requestFullscreen) modal.requestFullscreen().catch(()=>{});
+  else if(modal.webkitRequestFullscreen) modal.webkitRequestFullscreen();
+
+  // 말풍선 루프 애니메이션 (실제 postStage에서 실행 — 녹화 타이밍용)
+  // 사용자가 화면 녹화를 켠 뒤 하트를 누르면 말풍선이 뜸
+  // 자동 루프도 함께 실행
+  let loopTimer = null;
+  const comments = state.comments.length ? state.comments
+    : [{who:"@friend", text:"💕", color:state.colorBubble}];
+  let loopIdx = 0;
+
+  // 클론에서 하트 버튼 활성화
+  const cloneHeart = clone.querySelector("#heartBtn");
+  if(cloneHeart){
+    cloneHeart.style.pointerEvents = "auto";
+    cloneHeart.onclick = () => {
+      const c = comments[loopIdx % comments.length];
+      loopIdx++;
+      showBubbleOnClone(c, clone);
+    };
+  }
+
+  // 자동 루프
+  function autoLoop(){
+    const c = comments[loopIdx % comments.length];
+    loopIdx++;
+    showBubbleOnClone(c, clone);
+    const INTERVAL = 3800 + comments.length * 200;
+    loopTimer = setTimeout(autoLoop, INTERVAL);
+  }
+  setTimeout(autoLoop, 1200); // 첫 말풍선 1.2초 뒤 시작
+
+  // 클론에 말풍선 띄우기 (CSS transition 사용)
+  function showBubbleOnClone(c, stageEl){
+    const POS = [[8,48],[40,34],[8,64],[40,54],[8,34],[40,64]];
+    const pos = POS[loopIdx % POS.length];
+    const col = c.color || state.colorBubble;
+    const bs = state.bubbleStyle||{};
+    const shape = bs.shape||"round";
+    const radius = (shape==="pill"||shape==="thought")?"999px":"14px";
+    const pad = (shape==="pill"||shape==="thought")?"9px 18px":"10px 14px";
+
+    const b = document.createElement("div");
+    b.style.cssText = `
+      position:absolute;
+      left:${pos[0]}%;bottom:${pos[1]}%;
+      background:#fff;border:2px solid ${col};border-radius:${radius};
+      padding:${pad};font-size:14px;line-height:1.45;
+      font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+      white-space:nowrap;max-width:65%;z-index:30;pointer-events:none;
+      opacity:0;transform:translateY(16px) scale(0.9);
+      transition:opacity 0.4s ease,transform 0.4s cubic-bezier(.22,.68,0,1.2);
+    `;
+    const w = document.createElement("span");
+    w.style.cssText = `font-weight:800;color:${col};margin-right:4px;`;
+    w.textContent = c.who;
+    const m = document.createElement("span");
+    m.style.color = "#3a3a3a"; m.textContent = c.text;
+    b.append(w, m);
+
+    // 꼬리 SVG
+    if(shape!=="thought"&&shape!=="none"){
+      const sv=document.createElementNS("http://www.w3.org/2000/svg","svg");
+      sv.setAttribute("width","16");sv.setAttribute("height","10");sv.setAttribute("viewBox","0 0 16 10");
+      sv.style.cssText="position:absolute;bottom:-10px;left:14px;overflow:visible;";
+      const o=document.createElementNS("http://www.w3.org/2000/svg","polygon");
+      o.setAttribute("points","0,0 16,0 5,10");o.setAttribute("fill",col);
+      const i=document.createElementNS("http://www.w3.org/2000/svg","polygon");
+      i.setAttribute("points","2,0 16,0 6,7.5");i.setAttribute("fill","#fff");
+      sv.append(o,i);b.appendChild(sv);
+    }
+    stageEl.appendChild(b);
+
+    // 등장
+    requestAnimationFrame(()=>{
+      requestAnimationFrame(()=>{
+        b.style.opacity="1";
+        b.style.transform="translateY(0) scale(1)";
+      });
     });
 
-    rec.stop();
-    await new Promise(r=>{rec.onstop=r;});
-    const blob=new Blob(chunks,{type:mime});
-    downloadURL(URL.createObjectURL(blob),`huchu.${ext}`);
-
-    postStage.style.transform=prevT;
-    postStage.classList.remove("exporting");
-    selSticker=prevSel; renderStickers();
-
-    const mb=(blob.size/1024/1024).toFixed(1);
-    setStatus(`영상 저장 완료! (${mb}MB .${ext}) ✅ 트위터 업로드 가능`);
-    $("mp4status").textContent="";
-    btns.forEach(b=>b.disabled=false);
-
-  }catch(err){
-    postStage.classList.remove("exporting");
-    selSticker=prevSel; renderStickers();
-    setStatus("오류: "+err.message);
-    console.error(err);
-    btns.forEach(b=>b.disabled=false);
+    // 퇴장 (2.8초 후)
+    setTimeout(()=>{
+      b.style.transition="opacity 0.35s ease,transform 0.35s ease";
+      b.style.opacity="0";
+      b.style.transform="translateY(-12px) scale(0.92)";
+      setTimeout(()=>b.remove(), 400);
+    }, 2800);
   }
+
+  // 닫기
+  function closeFS(){
+    clearTimeout(loopTimer);
+    // 전체화면 해제
+    if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+    else if(document.webkitFullscreenElement) document.webkitExitFullscreen();
+    modal.style.display = "none";
+    stage.innerHTML = "";
+  }
+  $("fullscreenClose").onclick = closeFS;
+  document.addEventListener("fullscreenchange", ()=>{
+    if(!document.fullscreenElement && modal.style.display!=="none") closeFS();
+  }, {once:true});
 };
 
 /* 초기화 */
@@ -2479,53 +2609,60 @@ $("exportGif").onclick = async () => {
     postStage.style.transform="none";
     await new Promise(r=>requestAnimationFrame(r));
 
-    // 트위터 5MB 목표: 짧은변 400px로 제한
-    const shortSide=Math.min(postStage.offsetWidth, postStage.offsetHeight);
-    const S=Math.min(1.0, 400/shortSide);
+    // 해상도 제한
+    const shortSide=Math.min(postStage.offsetWidth,postStage.offsetHeight);
+    const S=Math.min(1.0,420/shortSide);
     const W=Math.round(postStage.offsetWidth*S);
     const H=Math.round(postStage.offsetHeight*S);
 
-    const gif=new GIF({
-      workers:3, quality:5, colors:128,
-      width:W, height:H, workerScript:workerURL,
-      background:"#ffffff"
-    });
+    const gif=new GIF({workers:3,quality:5,colors:128,width:W,height:H,workerScript:workerURL});
 
     const comments=state.comments.length?state.comments
       :[{who:"@friend",text:"💕",color:state.colorBubble}];
 
-    // 카드 안 말풍선 위치 (post 기준 %)
-    const POS=[
-      [8,50],[8,34],[8,65],[40,50],[40,34],[40,65]
-    ];
+    // 카드 기준 위치 계산
+    const stageRect=postStage.getBoundingClientRect();
+    const postRect=post.getBoundingClientRect();
+    const cardXPct=(postRect.left-stageRect.left)/postStage.offsetWidth*100;
+    const cardYPct=(postRect.top-stageRect.top)/postStage.offsetHeight*100;
+    const cardWPct=postRect.width/postStage.offsetWidth*100;
+    const cardHPct=postRect.height/postStage.offsetHeight*100;
 
-    // 말풍선 DOM 생성 (실제 CSS 적용 — html2canvas가 정확히 렌더링)
-    function makeDomBubble(c, xPct, yPct){
+    // 위치 배열 (카드 내 x%, y%)
+    const POS=[[8,48],[8,32],[8,64],[40,48],[40,32],[40,64]];
+
+    // 슬라이드 애니메이션 프레임 정의
+    // 각 말풍선: IN(올라오는) → HOLD(유지) → OUT(올라가서 사라짐)
+    const IN_F=3;   // 등장 프레임 (아래서 위로 슬라이드)
+    const HOLD_F=6; // 유지 프레임
+    const OUT_F=3;  // 퇴장 프레임
+    const LIFE=IN_F+HOLD_F+OUT_F;
+    const GAP=Math.ceil(LIFE*0.5); // 다음 말풍선 등장 간격
+    const DELAY=120;
+
+    const startAt=comments.map((_,i)=>i*GAP);
+    const TOTAL=startAt[comments.length-1]+LIFE+3;
+
+    // 말풍선 DOM 생성 (슬라이드 offset 적용)
+    function makeBubble(c,xPct,yPct,slideOffsetPx){
       const col=c.color||state.colorBubble;
       const bs=state.bubbleStyle||{};
       const shape=bs.shape||"round";
       const radius=(shape==="pill"||shape==="thought")?"999px":"14px";
       const pad=(shape==="pill"||shape==="thought")?"8px 16px":"9px 13px";
 
+      // postStage 기준 절대 % 위치
+      const lPct=cardXPct+(xPct/100)*cardWPct;
+      const tPct=cardYPct+(yPct/100)*cardHPct;
+
+      // slideOffsetPx: 양수면 아래(등장 전), 음수면 위(퇴장 후)
+      const topPx=(tPct/100)*postStage.offsetHeight + slideOffsetPx;
+
       const b=document.createElement("div");
-      b.className="gif-bubble";
-
-      // post 기준 % 위치
-      const stageRect=postStage.getBoundingClientRect();
-      const postRect=post.getBoundingClientRect();
-      const cardXPct=(postRect.left-stageRect.left)/postStage.offsetWidth*100;
-      const cardYPct=(postRect.top-stageRect.top)/postStage.offsetHeight*100;
-      const cardWPct=postRect.width/postStage.offsetWidth*100;
-      const cardHPct=postRect.height/postStage.offsetHeight*100;
-
-      // 절대 % (postStage 기준)
-      let lPct=cardXPct + (xPct/100)*cardWPct;
-      let tPct=cardYPct + (yPct/100)*cardHPct;
-
       b.style.cssText=`
         position:absolute;
         left:${lPct}%;
-        top:${tPct}%;
+        top:${topPx}px;
         transform:translateY(-100%);
         background:#fff;
         border:2px solid ${col};
@@ -2546,8 +2683,8 @@ $("exportGif").onclick = async () => {
       m.textContent=c.text;
       b.append(w,m);
 
-      // 꼬리 SVG
-      if(shape!=="thought"&&shape!=="none"){
+      // 꼬리 (퇴장 중에는 숨김 — 위로 나가는 중)
+      if(shape!=="thought"&&shape!=="none"&&slideOffsetPx<=0){
         const sv=document.createElementNS("http://www.w3.org/2000/svg","svg");
         sv.setAttribute("width","16");sv.setAttribute("height","10");sv.setAttribute("viewBox","0 0 16 10");
         sv.style.cssText="position:absolute;bottom:-10px;left:14px;overflow:visible;display:block;";
@@ -2561,57 +2698,63 @@ $("exportGif").onclick = async () => {
       return b;
     }
 
-    // 프레임 구성
-    // SHOW_ON: 말풍선 보이는 프레임, SHOW_OFF: 없는 프레임, 교차
-    const HOLD=7;  // 보이는 프레임 수
-    const GAP=4;   // 겹치는 프레임 (앞 말풍선과 겹침)
-    const DELAY=130; // ms/프레임
-    const startAt=comments.map((_,i)=>i*(HOLD-GAP));
-    const TOTAL=startAt[comments.length-1]+HOLD+3;
-    const bEls={};
-
-    async function snapGif(){
+    async function snapFrame(){
       const cv=await html2canvas(postStage,{
-        scale:S, useCORS:true, backgroundColor:null,
-        logging:false, removeContainer:true
+        scale:S,useCORS:true,backgroundColor:null,logging:false,removeContainer:true
       });
-      return cv;
+      const tmp=document.createElement("canvas");
+      tmp.width=W;tmp.height=H;
+      tmp.getContext("2d").drawImage(cv,0,0,W,H);
+      return tmp;
     }
 
+    // 슬라이드 오프셋 계산
+    // IN: slideOffset 18→0px (아래서 위로)
+    // HOLD: 0px
+    // OUT: 0→-20px (위로 사라짐)
+    const SLIDE_DIST=18; // px (화면 기준)
+
     for(let frame=0;frame<TOTAL;frame++){
-      // 이번 프레임에 보일 말풍선 결정
+      // 기존 말풍선 모두 제거
+      postStage.querySelectorAll(".gif-bubble-temp").forEach(b=>b.remove());
+
       for(let ci=0;ci<comments.length;ci++){
         const f=frame-startAt[ci];
-        const key=`c${ci}`;
-        const show=(f>=0&&f<HOLD);
-        if(show && !bEls[key]){
-          bEls[key]=makeDomBubble(comments[ci],POS[ci%POS.length][0],POS[ci%POS.length][1]);
-        }else if(!show && bEls[key]){
-          bEls[key].remove(); delete bEls[key];
+        if(f<0||f>=LIFE) continue;
+
+        const pos=POS[ci%POS.length];
+        let offset=0;
+
+        if(f<IN_F){
+          // 등장: 아래서 위로 (easeOut 느낌)
+          const t=(f+1)/IN_F;
+          const ease=1-(1-t)*(1-t);
+          offset=SLIDE_DIST*(1-ease);
+        }else if(f<IN_F+HOLD_F){
+          offset=0;
+        }else{
+          // 퇴장: 위로 슬라이드
+          const t=(f-IN_F-HOLD_F+1)/OUT_F;
+          const ease=t*t;
+          offset=-SLIDE_DIST*ease;
         }
+
+        const b=makeBubble(comments[ci],pos[0],pos[1],offset);
+        b.classList.add("gif-bubble-temp");
       }
 
       await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-      const cv=await snapGif();
-
-      // 캔버스를 정확히 W×H로 리샘플
-      const tmp=document.createElement("canvas");
-      tmp.width=W; tmp.height=H;
-      tmp.getContext("2d").drawImage(cv,0,0,W,H);
+      const tmp=await snapFrame();
       gif.addFrame(tmp.getContext("2d"),{delay:DELAY,copy:true});
-
       setStatus(`GIF 생성 중… ${frame+1}/${TOTAL}`);
     }
 
-    // 모든 말풍선 제거
-    Object.values(bEls).forEach(b=>{try{b.remove()}catch(_){}});
+    // 정리
+    postStage.querySelectorAll(".gif-bubble-temp").forEach(b=>b.remove());
 
-    // 마지막 정지 프레임
-    const finalCv=await snapGif();
-    const tmp2=document.createElement("canvas");
-    tmp2.width=W; tmp2.height=H;
-    tmp2.getContext("2d").drawImage(finalCv,0,0,W,H);
-    gif.addFrame(tmp2.getContext("2d"),{delay:900,copy:true});
+    // 마지막 정지
+    const last=await snapFrame();
+    gif.addFrame(last.getContext("2d"),{delay:900,copy:true});
 
     postStage.style.transform=prevT;
     postStage.classList.remove("exporting");
@@ -2622,14 +2765,13 @@ $("exportGif").onclick = async () => {
       const mb=(blob.size/1024/1024).toFixed(2);
       const ok=+mb<=5;
       downloadURL(URL.createObjectURL(blob),"huchu.gif");
-      setStatus(`GIF 완료! ${mb}MB ${ok?"✅ 트위터 업로드 가능":"⚠️ 5MB 초과 — 댓글을 2~3개로 줄여보세요"}`);
+      setStatus(`GIF 완료! ${mb}MB ${ok?"✅ 트위터 업로드 가능":"⚠️ 5MB 초과 — 댓글을 줄여보세요"}`);
       btns.forEach(b=>b.disabled=false);
     });
     gif.render();
 
   }catch(err){
-    // 혹시 남은 말풍선 정리
-    postStage.querySelectorAll(".gif-bubble").forEach(b=>b.remove());
+    postStage.querySelectorAll(".gif-bubble-temp").forEach(b=>b.remove());
     postStage.classList.remove("exporting");
     selSticker=prevSel; renderStickers();
     setStatus("오류: "+err.message);
